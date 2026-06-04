@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, help="Write one-shot JSON output to this path instead of stdout.")
     parser.add_argument("--headful", action="store_true", help="Run browser visibly for manual anti-bot challenges.")
     parser.add_argument("--real-chrome", action="store_true", help="Use installed Google Chrome instead of bundled Chromium.")
+    parser.add_argument("--solve-cloudflare", action="store_true", help="Try Scrapling's Cloudflare challenge solver when a page is actually challenged.")
     parser.add_argument("--monitor", action="store_true", help="Continuously scan, warming the cache before notifications.")
     parser.add_argument("--notify-url", action="append", dest="notify_urls", help="Apprise notification URL. Repeat for multiple endpoints.")
     parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE_PATH, help="SQLite cache path for seen listings.")
@@ -55,6 +56,7 @@ def main(argv: list[str] | None = None) -> int:
                 limit=args.limit,
                 headless=not args.headful,
                 real_chrome=args.real_chrome,
+                solve_cloudflare=args.solve_cloudflare,
                 concurrent_requests=args.concurrency,
                 concurrent_requests_per_domain=args.per_domain_concurrency,
                 activity_log=_activity_log,
@@ -67,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         headless=not args.headful,
         real_chrome=args.real_chrome,
+        solve_cloudflare=args.solve_cloudflare,
         concurrent_requests=args.concurrency,
         concurrent_requests_per_domain=args.per_domain_concurrency,
     )

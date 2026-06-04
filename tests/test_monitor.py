@@ -27,7 +27,7 @@ def test_first_monitor_fetch_warms_cache_without_notifications(tmp_path: Path) -
             ["https://www.immobilienscout24.de/search"],
             cache=cache,
             notifier=notifier,
-            scraper=lambda urls, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: batches.pop(0),
+            scraper=lambda urls, limit, headless, real_chrome, solve_cloudflare, concurrent_requests, concurrent_requests_per_domain: batches.pop(0),
         )
 
         warm = monitor.warm_cache()
@@ -53,7 +53,7 @@ def test_monitor_run_forever_warms_before_first_scan(tmp_path: Path) -> None:
             ["https://www.immowelt.de/classified-search?order=DateDesc"],
             cache=cache,
             notifier=notifier,
-            scraper=lambda urls, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: batches.pop(0),
+            scraper=lambda urls, limit, headless, real_chrome, solve_cloudflare, concurrent_requests, concurrent_requests_per_domain: batches.pop(0),
         )
 
         monitor.run_forever(interval_seconds=1, max_scans=1, sleep=lambda seconds: None)
@@ -72,7 +72,7 @@ def test_monitor_activity_log_reports_warm_and_scan(tmp_path: Path) -> None:
             ["https://www.immobilienscout24.de/search", "https://www.immowelt.de/classified-search?order=DateDesc"],
             cache=cache,
             notifier=RecordingNotifier(),
-            scraper=lambda urls, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: batches.pop(0),
+            scraper=lambda urls, limit, headless, real_chrome, solve_cloudflare, concurrent_requests, concurrent_requests_per_domain: batches.pop(0),
             activity_log=messages.append,
         )
 

@@ -182,12 +182,14 @@ def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
         *,
         headless: bool,
         real_chrome: bool,
+        solve_cloudflare: bool,
         concurrent_requests: int,
         concurrent_requests_per_domain: int,
     ):
         assert tuple(urls) == tuple(pages)
         assert headless is True
         assert real_chrome is False
+        assert solve_cloudflare is False
         assert concurrent_requests == 8
         assert concurrent_requests_per_domain == 2
         return [
@@ -213,12 +215,14 @@ def test_concurrent_fetch_preserves_configured_page_order(monkeypatch) -> None:
             *,
             headless: bool,
             real_chrome: bool,
+            solve_cloudflare: bool,
             concurrent_requests: int,
             concurrent_requests_per_domain: int,
         ) -> None:
             assert urls == ("https://a.test", "https://b.test")
             assert headless is False
             assert real_chrome is True
+            assert solve_cloudflare is True
             assert concurrent_requests == 6
             assert concurrent_requests_per_domain == 3
 
@@ -237,6 +241,7 @@ def test_concurrent_fetch_preserves_configured_page_order(monkeypatch) -> None:
         ("https://a.test", "https://b.test"),
         headless=False,
         real_chrome=True,
+        solve_cloudflare=True,
         concurrent_requests=6,
         concurrent_requests_per_domain=3,
     )
