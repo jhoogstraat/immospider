@@ -1,0 +1,38 @@
+from __future__ import annotations
+
+import re
+
+from immobot_scrapling.models import Listing, ListingSource
+from immobot_scrapling.pages import immobilienscout24
+
+from .common import ExtractionConfig, extract_with_config
+
+CONFIG = ExtractionConfig(
+    source="ImmobilienScout24",
+    source_color=0x00AEEF,
+    host="www.immobilienscout24.de",
+    inline_model_names=("resultListModel", "searchResponseModel"),
+    data_re=re.compile(r"(?:resultListModel|searchResponseModel|listings|realEstates)", re.IGNORECASE),
+    id_re=re.compile(r"/(?:expose|angebot)/(?P<id>[A-Za-z0-9_-]+)"),
+    url_keys=("url", "href", "link", "detailUrl", "exposeUrl", "canonicalUrl"),
+    id_keys=("id", "@id", "realEstateId", "exposeId", "listingId", "externalId"),
+    title_keys=("title", "name", "headline", "shortDescription"),
+    price_keys=("price", "rent", "coldRent", "baseRent", "totalRent", "calculatedTotalRent"),
+    area_keys=("livingSpace", "livingArea", "area", "size"),
+    rooms_keys=("numberOfRooms", "rooms", "roomCount"),
+    provider_keys=("companyName", "realtorCompanyName", "provider", "contactName"),
+    published_keys=("publishDate", "creationDate", "modifiedDate", "published", "datePublished"),
+    image_keys=("image", "imageUrl", "picture", "pictureUrl", "titlePicture"),
+    nested_listing_key="resultlist.realEstate",
+)
+SOURCE = ListingSource(
+    name=CONFIG.source,
+    url=immobilienscout24.URL,
+    host=CONFIG.host,
+    color=CONFIG.source_color,
+    extract=lambda html, base_url: extract_listings(html, base_url),
+)
+
+
+def extract_listings(html: str, base_url: str = immobilienscout24.URL) -> list[Listing]:
+    return extract_with_config(html, base_url, CONFIG)

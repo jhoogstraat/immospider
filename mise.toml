@@ -1,0 +1,21 @@
+[tools]
+python = "3.12"
+uv = "latest"
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.install]
+description = "Install Python dependencies and Scrapling browser assets"
+run = [
+  "uv sync",
+  "uv run scrapling install"
+]
+
+[tasks.scrape]
+description = "Fetch latest ImmobilienScout24 listings for the configured URL"
+run = "uv run immobilienscout24-scraper"
+
+[tasks.test]
+description = "Run unit tests"
+run = "uv run pytest"

@@ -1,0 +1,21 @@
+[project]
+name = "immobot-scrapling"
+version = "0.1.0"
+description = "Scrapling-based property listing scraper"
+requires-python = ">=3.12"
+dependencies = [
+  "apprise>=1.9",
+  "scrapling[fetchers]>=0.3.13",
+]
+
+[project.scripts]
+listing-scraper = "immobot_scrapling.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
