@@ -7,7 +7,7 @@ from html import unescape
 from typing import Any
 from urllib.parse import quote_plus, urljoin, urlparse
 
-from immobot_scrapling.models import Listing
+from models import Listing
 
 _JSON_SCRIPT_RE = re.compile(
     r'<script[^>]+(?:type=["\']application/(?:ld\+)?json["\']|id=["\']__NEXT_DATA__["\'])[^>]*>(.*?)</script>',

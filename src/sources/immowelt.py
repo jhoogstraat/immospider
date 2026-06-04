@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-from immobot_scrapling.models import Listing, ListingSource
-from immobot_scrapling.pages import immowelt
+from models import Listing, ListingSource
+from pages import immowelt
 
 from .common import ExtractionConfig, extract_with_config
 

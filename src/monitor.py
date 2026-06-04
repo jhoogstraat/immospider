@@ -4,11 +4,11 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from .cache import SeenListingCache
-from .models import Listing
-from .notifications import Notifier
-from .pages import DEFAULT_URLS
-from .scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN, scrape_listing_pages
+from cache import SeenListingCache
+from models import Listing
+from notifications import Notifier
+from pages import DEFAULT_URLS
+from scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN, scrape_listing_pages
 
 
 @dataclass(frozen=True, slots=True)

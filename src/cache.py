@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from .models import Listing
+from models import Listing
 
 DEFAULT_CACHE_PATH = Path(".immobot_scrapling.sqlite3")
 

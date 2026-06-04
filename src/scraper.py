@@ -2,10 +2,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 from scrapling.fetchers import StealthyFetcher
-from .models import Listing, ListingSource
-from .pages import DEFAULT_URL, DEFAULT_URLS, IMMOBILIENSCOUT24_URL, IMMOWELT_URL
-from .sources import DEFAULT_SOURCES, source_for_url
-from .sources.common import dedupe
+from models import Listing, ListingSource
+from pages import DEFAULT_URL, DEFAULT_URLS, IMMOBILIENSCOUT24_URL, IMMOWELT_URL
+from sources import DEFAULT_SOURCES, source_for_url
+from sources.common import dedupe
 
 DEFAULT_CONCURRENT_REQUESTS = 4
 DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN = 1

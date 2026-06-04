@@ -1,7 +1,7 @@
-from immobot_scrapling import scraper
-from immobot_scrapling.pages import DEFAULT_URLS
-from immobot_scrapling.sources import immobilienscout24, immowelt
-from immobot_scrapling.scraper import extract_listings, scrape_listing_pages
+import scraper
+from pages import DEFAULT_URLS
+from sources import immobilienscout24, immowelt
+from scraper import extract_listings, scrape_listing_pages
 
 
 def test_extracts_listing_from_embedded_json() -> None:

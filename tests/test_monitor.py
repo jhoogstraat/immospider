@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import pytest
 
-from immobot_scrapling.cache import SeenListingCache
-from immobot_scrapling.models import Listing
-from immobot_scrapling.monitor import ListingMonitor
+from cache import SeenListingCache
+from models import Listing
+from monitor import ListingMonitor
 
 
 class RecordingNotifier:

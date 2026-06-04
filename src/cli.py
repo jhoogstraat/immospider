@@ -8,12 +8,12 @@ import sys
 import threading
 from pathlib import Path
 
-from .cache import DEFAULT_CACHE_PATH, SeenListingCache
-from .monitor import ListingMonitor
-from .notifications import AppriseNotifier
+from cache import DEFAULT_CACHE_PATH, SeenListingCache
+from monitor import ListingMonitor
+from notifications import AppriseNotifier
 
-from .pages import DEFAULT_URLS
-from .scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN, listing_dicts, scrape_listing_pages
+from pages import DEFAULT_URLS
+from scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN, listing_dicts, scrape_listing_pages
 
 
 def main(argv: list[str] | None = None) -> int:

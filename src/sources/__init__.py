@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from immobot_scrapling.models import ListingSource
+from models import ListingSource
 
 from . import immobilienscout24, immowelt
 
