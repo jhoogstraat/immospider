@@ -79,12 +79,13 @@ class ListingMonitor:
         *,
         interval_seconds: float,
         max_scans: int | None = None,
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Callable[[float], object] = time.sleep,
     ) -> None:
         self.warm_cache()
         scans = 0
         while max_scans is None or scans < max_scans:
-            sleep(interval_seconds)
+            if sleep(interval_seconds):
+                break
             self.scan_once()
             scans += 1
 

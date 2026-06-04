@@ -1,12 +1,7 @@
 from __future__ import annotations
-
-import logging
 from dataclasses import asdict, dataclass
-from typing import Any, AsyncGenerator
-
-from scrapling.fetchers import AsyncStealthySession, StealthyFetcher
-from scrapling.spiders import Request, Response, Spider
-
+from typing import Any
+from scrapling.fetchers import StealthyFetcher
 from .models import Listing, ListingSource
 from .pages import DEFAULT_URL, DEFAULT_URLS, IMMOBILIENSCOUT24_URL, IMMOWELT_URL
 from .sources import DEFAULT_SOURCES, source_for_url
@@ -14,6 +9,9 @@ from .sources.common import dedupe
 
 DEFAULT_CONCURRENT_REQUESTS = 4
 DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN = 1
+BROWSER_SETTLE_MS = 500
+BROWSER_TIMEOUT_MS = 45000
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +45,7 @@ def scrape_listing_pages(
     concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
     concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
 ) -> list[Listing]:
-    """Fetch listing search pages concurrently and return deduplicated, page-ordered listings."""
+    """Fetch listing search pages and return deduplicated, page-ordered listings."""
     pages = _fetch_pages_concurrently(
         urls,
         headless=headless,
@@ -72,7 +70,7 @@ def scrape_sources(
     concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
     concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
 ) -> list[Listing]:
-    """Fetch configured housing sources concurrently and return listings ready for notification."""
+    """Fetch configured housing sources and return listings ready for notification."""
     pages = _fetch_pages_concurrently(
         [source.url for source in sources],
         headless=headless,
@@ -98,100 +96,59 @@ def _fetch_pages_concurrently(
     concurrent_requests: int,
     concurrent_requests_per_domain: int,
 ) -> list[_FetchedPage]:
-    if not urls:
-        return []
-    spider = _ListingPageSpider(
-        urls,
-        headless=headless,
-        real_chrome=real_chrome,
-        solve_cloudflare=solve_cloudflare,
-        concurrent_requests=concurrent_requests,
-        concurrent_requests_per_domain=concurrent_requests_per_domain,
-    )
-    result = spider.start()
+    _ = concurrent_requests, concurrent_requests_per_domain
     pages = [
-        _FetchedPage(
-            position=item["position"],
-            requested_url=item["requested_url"],
-            final_url=item["final_url"],
-            html=item["html"],
-        )
-        for item in result.items
+        _fetch_page(position, url, headless=headless, real_chrome=real_chrome, solve_cloudflare=solve_cloudflare)
+        for position, url in enumerate(urls)
     ]
     pages.sort(key=lambda page: page.position)
     return pages
 
 
-class _ListingPageSpider(Spider):
-    name = "listing_pages"
-    logging_level = logging.WARNING
-    allowed_domains: set[str] = set()
+def _fetch_page(
+    position: int,
+    url: str,
+    *,
+    headless: bool,
+    real_chrome: bool,
+    solve_cloudflare: bool,
+) -> _FetchedPage:
+    response = _fetch_response(url, headless=headless, real_chrome=real_chrome, solve_cloudflare=solve_cloudflare)
+    return _FetchedPage(
+        position=position,
+        requested_url=url,
+        final_url=response.url,
+        html=response.body.decode(response.encoding or "utf-8", errors="replace"),
+    )
 
-    def __init__(
-        self,
-        urls: tuple[str, ...] | list[str],
-        *,
-        headless: bool,
-        real_chrome: bool,
-        solve_cloudflare: bool,
-        concurrent_requests: int,
-        concurrent_requests_per_domain: int,
-    ) -> None:
-        self._urls = tuple(urls)
-        self._headless = headless
-        self._real_chrome = real_chrome
-        self._solve_cloudflare = solve_cloudflare
-        self.concurrent_requests = concurrent_requests
-        self.concurrent_requests_per_domain = concurrent_requests_per_domain
-        super().__init__()
 
-    def configure_sessions(self, manager: Any) -> None:
-        manager.add(
-            "stealth",
-            AsyncStealthySession(
-                headless=self._headless,
-                real_chrome=self._real_chrome,
-                block_webrtc=True,
-                hide_canvas=True,
-                locale="de-DE",
-                timezone_id="Europe/Berlin",
-                network_idle=True,
-                wait=2000,
-                timeout=90000,
-                solve_cloudflare=self._solve_cloudflare,
-                block_ads=True,
-            ),
-            default=True,
-        )
+def _browser_options(*, headless: bool, real_chrome: bool, solve_cloudflare: bool, max_pages: int = 1) -> dict[str, Any]:
+    return {
+        "headless": headless,
+        "real_chrome": real_chrome,
+        "block_webrtc": True,
+        "hide_canvas": True,
+        "locale": "de-DE",
+        "timezone_id": "Europe/Berlin",
+        "network_idle": False,
+        "wait": BROWSER_SETTLE_MS,
+        "timeout": BROWSER_TIMEOUT_MS,
+        "disable_resources": True,
+        "solve_cloudflare": solve_cloudflare,
+        "block_ads": True,
+        "max_pages": max_pages,
+    }
 
-    async def start_requests(self) -> AsyncGenerator[Request, None]:
-        for position, url in enumerate(self._urls):
-            yield Request(url, sid="stealth", callback=self.parse, dont_filter=True, meta={"position": position})
 
-    async def parse(self, response: Response) -> AsyncGenerator[dict[str, Any], None]:
-        yield {
-            "position": response.meta["position"],
-            "requested_url": response.request.url if response.request is not None else response.url,
-            "final_url": response.url,
-            "html": response.body.decode(response.encoding or "utf-8", errors="replace"),
-        }
+def _fetch_response(url: str, *, headless: bool, real_chrome: bool, solve_cloudflare: bool) -> Any:
+    return StealthyFetcher.fetch(
+        url,
+        **_browser_options(headless=headless, real_chrome=real_chrome, solve_cloudflare=solve_cloudflare),
+    )
 
 
 def _fetch_html(url: str, *, headless: bool, real_chrome: bool, solve_cloudflare: bool) -> str:
-    response = StealthyFetcher.fetch(
-        url,
-        headless=headless,
-        real_chrome=real_chrome,
-        block_webrtc=True,
-        hide_canvas=True,
-        locale="de-DE",
-        timezone_id="Europe/Berlin",
-        network_idle=True,
-        wait=2000,
-        timeout=90000,
-        solve_cloudflare=solve_cloudflare,
-        block_ads=True,
-    )
+    response = _fetch_response(url, headless=headless, real_chrome=real_chrome, solve_cloudflare=solve_cloudflare)
     return response.body.decode(response.encoding or "utf-8", errors="replace")
 
 

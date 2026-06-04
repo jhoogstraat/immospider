@@ -207,35 +207,21 @@ def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
     ]
 
 
-def test_concurrent_fetch_preserves_configured_page_order(monkeypatch) -> None:
-    class FakeSpider:
-        def __init__(
-            self,
-            urls,
-            *,
-            headless: bool,
-            real_chrome: bool,
-            solve_cloudflare: bool,
-            concurrent_requests: int,
-            concurrent_requests_per_domain: int,
-        ) -> None:
-            assert urls == ("https://a.test", "https://b.test")
-            assert headless is False
-            assert real_chrome is True
-            assert solve_cloudflare is True
-            assert concurrent_requests == 6
-            assert concurrent_requests_per_domain == 3
+def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
+    def fake_fetch_page(
+        position: int,
+        url: str,
+        *,
+        headless: bool,
+        real_chrome: bool,
+        solve_cloudflare: bool,
+    ):
+        assert headless is False
+        assert real_chrome is True
+        assert solve_cloudflare is True
+        return scraper._FetchedPage(position=position, requested_url=url, final_url=url, html=url[-6])
 
-        def start(self):
-            class Result:
-                items = [
-                    {"position": 1, "requested_url": "https://b.test", "final_url": "https://b.test", "html": "b"},
-                    {"position": 0, "requested_url": "https://a.test", "final_url": "https://a.test", "html": "a"},
-                ]
-
-            return Result()
-
-    monkeypatch.setattr(scraper, "_ListingPageSpider", FakeSpider)
+    monkeypatch.setattr(scraper, "_fetch_page", fake_fetch_page)
 
     pages = scraper._fetch_pages_concurrently(
         ("https://a.test", "https://b.test"),

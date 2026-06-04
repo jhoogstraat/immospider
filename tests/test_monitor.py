@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
 
 from immobot_scrapling.cache import SeenListingCache
 from immobot_scrapling.models import Listing
@@ -60,6 +61,23 @@ def test_monitor_run_forever_warms_before_first_scan(tmp_path: Path) -> None:
 
     assert notifier.sent == [new_listing]
 
+
+def test_monitor_run_forever_propagates_keyboard_interrupt(tmp_path: Path) -> None:
+    notifier = RecordingNotifier()
+
+    with SeenListingCache(tmp_path / "seen.sqlite3") as cache:
+        monitor = ListingMonitor(
+            ["https://www.immowelt.de/classified-search?order=DateDesc"],
+            cache=cache,
+            notifier=notifier,
+            scraper=lambda urls, limit, headless, real_chrome, solve_cloudflare, concurrent_requests, concurrent_requests_per_domain: [_listing("1", "Warm")],
+        )
+
+        with pytest.raises(KeyboardInterrupt):
+            monitor.run_forever(
+                interval_seconds=1,
+                sleep=lambda seconds: (_ for _ in ()).throw(KeyboardInterrupt),
+            )
 
 def test_monitor_activity_log_reports_warm_and_scan(tmp_path: Path) -> None:
     first = _listing("1", "Warm")

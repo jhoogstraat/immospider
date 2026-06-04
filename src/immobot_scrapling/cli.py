@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import signal
 from datetime import datetime
 import sys
+import threading
 from pathlib import Path
 
 from .cache import DEFAULT_CACHE_PATH, SeenListingCache
@@ -61,7 +63,25 @@ def main(argv: list[str] | None = None) -> int:
                 concurrent_requests_per_domain=args.per_domain_concurrency,
                 activity_log=_activity_log,
             )
-            monitor.run_forever(interval_seconds=args.interval)
+            stop_requested = threading.Event()
+            original_sigint = signal.getsignal(signal.SIGINT)
+            original_sigterm = signal.getsignal(signal.SIGTERM)
+
+            def request_stop(signum: int, frame: object) -> None:
+                if not stop_requested.is_set():
+                    _activity_log("stop requested; finishing current scan")
+                    stop_requested.set()
+
+            signal.signal(signal.SIGINT, request_stop)
+            signal.signal(signal.SIGTERM, request_stop)
+            try:
+                monitor.run_forever(interval_seconds=args.interval, sleep=stop_requested.wait)
+            finally:
+                signal.signal(signal.SIGINT, original_sigint)
+                signal.signal(signal.SIGTERM, original_sigterm)
+            if stop_requested.is_set():
+                _activity_log("monitor stopped")
+                return 130
         return 0
 
     listings = scrape_listing_pages(
