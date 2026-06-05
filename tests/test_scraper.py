@@ -1,7 +1,9 @@
+from types import SimpleNamespace
+
 import scraper
 from pages import fetch_options_for_url
 from sources import immobilienscout24, immowelt
-from scraper import extract_listings, scrape_listing_pages
+from scraper import extract_listings, scrape_listing_page_groups, scrape_listing_pages
 
 
 def test_extracts_listing_from_embedded_json() -> None:
@@ -205,23 +207,97 @@ def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
         "https://www.immobilienscout24.de/expose/1",
         "https://www.immowelt.de/expose/2",
     ]
+def test_scrapes_criteria_groups_with_one_concurrent_fetch(monkeypatch) -> None:
+    pages = {
+        "https://www.immobilienscout24.de/duesseldorf": """
+            <script type="application/json">
+            {"resultListModel":{"realEstates":[{"id":"1", "url":"/expose/1", "title":"Düsseldorf Scout"}]}}
+            </script>
+        """,
+        "https://www.immowelt.de/duesseldorf": """
+            <script type="application/json">
+            {"classifieds":[{"classifiedId":"2", "url":"/expose/2", "headline":"Düsseldorf Welt"}]}
+            </script>
+        """,
+        "https://www.immobilienscout24.de/cologne": """
+            <script type="application/json">
+            {"resultListModel":{"realEstates":[{"id":"3", "url":"/expose/3", "title":"Cologne Scout"}]}}
+            </script>
+        """,
+    }
+    requested_batches = []
 
-
-def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
-    def fake_fetch_page(
-        position: int,
-        url: str,
+    def fake_fetch_pages(
+        urls,
         *,
         headless: bool,
         real_chrome: bool,
         solve_cloudflare: bool,
+        concurrent_requests: int,
+        concurrent_requests_per_domain: int,
     ):
-        assert headless is False
-        assert real_chrome is True
-        assert solve_cloudflare is True
-        return scraper._FetchedPage(position=position, requested_url=url, final_url=url, html=url[-6])
+        requested_batches.append(tuple(urls))
+        return [
+            scraper._FetchedPage(position=position, requested_url=url, final_url=url, html=pages[url])
+            for position, url in enumerate(urls)
+        ]
 
-    monkeypatch.setattr(scraper, "_fetch_page", fake_fetch_page)
+    monkeypatch.setattr(scraper, "_fetch_pages_concurrently", fake_fetch_pages)
+
+    grouped = scrape_listing_page_groups(
+        [
+            ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"),
+            ("https://www.immobilienscout24.de/cologne",),
+        ],
+        limit=10,
+    )
+
+    assert requested_batches == [
+        (
+            "https://www.immobilienscout24.de/duesseldorf",
+            "https://www.immowelt.de/duesseldorf",
+            "https://www.immobilienscout24.de/cologne",
+        )
+    ]
+    assert [[listing.title for listing in listings] for listings in grouped] == [
+        ["Düsseldorf Scout", "Düsseldorf Welt"],
+        ["Cologne Scout"],
+    ]
+
+
+
+
+def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
+    created: list[object] = []
+
+    class FakeSpider:
+        def __init__(
+            self,
+            urls,
+            *,
+            headless: bool,
+            real_chrome: bool,
+            solve_cloudflare: bool,
+            concurrent_requests: int,
+            concurrent_requests_per_domain: int,
+        ) -> None:
+            assert urls == ("https://a.test", "https://b.test")
+            assert headless is False
+            assert real_chrome is True
+            assert solve_cloudflare is True
+            assert concurrent_requests == 6
+            assert concurrent_requests_per_domain == 3
+            created.append(self)
+
+        def start(self):
+            return SimpleNamespace(
+                items=[
+                    {"position": 1, "requested_url": "https://b.test", "final_url": "https://b.test", "html": "b"},
+                    {"position": 0, "requested_url": "https://a.test", "final_url": "https://a.test", "html": "a"},
+                ]
+            )
+
+    monkeypatch.setattr(scraper, "_ListingPagesSpider", FakeSpider)
 
     pages = scraper._fetch_pages_concurrently(
         ("https://a.test", "https://b.test"),
@@ -233,6 +309,7 @@ def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
     )
 
     assert [page.requested_url for page in pages] == ["https://a.test", "https://b.test"]
+    assert len(created) == 1
 
 
 

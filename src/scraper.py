@@ -1,11 +1,13 @@
 from __future__ import annotations
+import logging
 from dataclasses import asdict, dataclass
 from typing import Any
-from scrapling.fetchers import StealthyFetcher
+from scrapling.fetchers import AsyncStealthySession, StealthyFetcher
 from models import Listing
 from pages import fetch_options_for_url
 from sources import source_for_url
 from sources.common import dedupe
+from scrapling.spiders import Request, Response, Spider
 
 DEFAULT_CONCURRENT_REQUESTS = 4
 DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN = 1
@@ -60,6 +62,38 @@ def scrape_listing_pages(
         listings.extend(source.extract(page.html, page.requested_url)[:limit])
     return dedupe(listings)[:limit]
 
+def scrape_listing_page_groups(
+    url_groups: tuple[tuple[str, ...], ...] | list[tuple[str, ...]],
+    limit: int = 20,
+    headless: bool = True,
+    real_chrome: bool = False,
+    solve_cloudflare: bool = False,
+    concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
+    concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
+) -> list[list[Listing]]:
+    """Fetch all criteria URLs in one Scrapling spider crawl, then split listings back by criteria."""
+    flat_urls = [url for urls in url_groups for url in urls]
+    pages = _fetch_pages_concurrently(
+        flat_urls,
+        headless=headless,
+        real_chrome=real_chrome,
+        solve_cloudflare=solve_cloudflare,
+        concurrent_requests=concurrent_requests,
+        concurrent_requests_per_domain=concurrent_requests_per_domain,
+    )
+    pages_by_position = {page.position: page for page in pages}
+    groups: list[list[Listing]] = []
+    position = 0
+    for urls in url_groups:
+        listings: list[Listing] = []
+        for url in urls:
+            page = pages_by_position[position]
+            source = source_for_url(url)
+            listings.extend(source.extract(page.html, url)[:limit])
+            position += 1
+        groups.append(dedupe(listings)[:limit])
+    return groups
+
 
 
 
@@ -72,30 +106,92 @@ def _fetch_pages_concurrently(
     concurrent_requests: int,
     concurrent_requests_per_domain: int,
 ) -> list[_FetchedPage]:
-    _ = concurrent_requests, concurrent_requests_per_domain
+    if not urls:
+        return []
+    spider = _ListingPagesSpider(
+        tuple(urls),
+        headless=headless,
+        real_chrome=real_chrome,
+        solve_cloudflare=solve_cloudflare,
+        concurrent_requests=concurrent_requests,
+        concurrent_requests_per_domain=concurrent_requests_per_domain,
+    )
+    result = spider.start()
     pages = [
-        _fetch_page(position, url, headless=headless, real_chrome=real_chrome, solve_cloudflare=solve_cloudflare)
-        for position, url in enumerate(urls)
+        _FetchedPage(
+            position=item["position"],
+            requested_url=item["requested_url"],
+            final_url=item["final_url"],
+            html=item["html"],
+        )
+        for item in result.items
     ]
     pages.sort(key=lambda page: page.position)
     return pages
 
 
-def _fetch_page(
-    position: int,
-    url: str,
-    *,
-    headless: bool,
-    real_chrome: bool,
-    solve_cloudflare: bool,
-) -> _FetchedPage:
-    response = _fetch_response(url, headless=headless, real_chrome=real_chrome, solve_cloudflare=solve_cloudflare)
-    return _FetchedPage(
-        position=position,
-        requested_url=url,
-        final_url=response.url,
-        html=response.body.decode(response.encoding or "utf-8", errors="replace"),
-    )
+class _ListingPagesSpider(Spider):
+    name = "listing_pages"
+    logging_level = logging.WARNING
+
+    def __init__(
+        self,
+        urls: tuple[str, ...],
+        *,
+        headless: bool,
+        real_chrome: bool,
+        solve_cloudflare: bool,
+        concurrent_requests: int,
+        concurrent_requests_per_domain: int,
+    ) -> None:
+        self.urls = urls
+        self.headless = headless
+        self.real_chrome = real_chrome
+        self.solve_cloudflare = solve_cloudflare
+        self.concurrent_requests = concurrent_requests
+        self.concurrent_requests_per_domain = concurrent_requests_per_domain
+        super().__init__()
+
+    def configure_sessions(self, manager) -> None:
+        manager.add(
+            "stealth",
+            AsyncStealthySession(
+                **_browser_options(
+                    page_options={},
+                    headless=self.headless,
+                    real_chrome=self.real_chrome,
+                    solve_cloudflare=self.solve_cloudflare,
+                    max_pages=self.concurrent_requests,
+                )
+            ),
+            default=True,
+        )
+
+    async def start_requests(self):
+        for position, url in enumerate(self.urls):
+            yield Request(
+                url,
+                sid="stealth",
+                callback=self.parse,
+                meta={"position": position, "requested_url": url},
+                **_browser_options(
+                    page_options=fetch_options_for_url(url),
+                    headless=self.headless,
+                    real_chrome=self.real_chrome,
+                    solve_cloudflare=self.solve_cloudflare,
+                    max_pages=self.concurrent_requests,
+                ),
+            )
+
+    async def parse(self, response: Response):
+        yield {
+            "position": response.meta["position"],
+            "requested_url": response.meta["requested_url"],
+            "final_url": response.url,
+            "html": response.body.decode(response.encoding or "utf-8", errors="replace"),
+        }
+
+
 
 
 def _browser_options(

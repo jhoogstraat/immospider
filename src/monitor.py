@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from cache import SeenListingCache
 from models import Listing
 from notifications import Notifier
-from scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN, scrape_listing_pages
+from scraper import (
+    DEFAULT_CONCURRENT_REQUESTS,
+    DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
+    scrape_listing_page_groups,
+    scrape_listing_pages,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +29,7 @@ class SearchCriteria:
     notifier: Notifier
 
 ScrapeListings = Callable[[Sequence[str], int, bool, bool, bool, int, int], list[Listing]]
+ScrapeListingGroups = Callable[[Sequence[tuple[str, ...]], int, bool, bool, bool, int, int], list[list[Listing]]]
 ActivityLog = Callable[[str], None]
 
 
@@ -44,6 +50,7 @@ class ListingMonitor:
         concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
         concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
         scraper: ScrapeListings | None = None,
+        group_scraper: ScrapeListingGroups | None = None,
         activity_log: ActivityLog | None = None,
     ) -> None:
         self.criteria = tuple(criteria) if criteria is not None else (SearchCriteria("default", tuple(urls or ()), notifier),)
@@ -60,15 +67,15 @@ class ListingMonitor:
         self.solve_cloudflare = solve_cloudflare
         self.concurrent_requests = concurrent_requests
         self.concurrent_requests_per_domain = concurrent_requests_per_domain
-        self.scraper = scraper or _scrape_listing_pages
+        self.scraper = scraper
+        self.group_scraper = group_scraper or _scrape_listing_page_groups
         self.activity_log = activity_log
 
     def warm_cache(self) -> ScanResult:
         self._log(f"warming cache: fetching {len(self.urls)} page(s)")
         seen = 0
         new = 0
-        for criterion in self.criteria:
-            listings = self._fetch(criterion)
+        for criterion, listings in zip(self.criteria, self._fetch_by_criterion(), strict=True):
             seen += len(listings)
             new += self.cache.remember_many(listings, self._cache_namespace(criterion))
         result = ScanResult(seen=seen, new=new, notified=0)
@@ -80,8 +87,7 @@ class ListingMonitor:
         seen = 0
         new_count = 0
         notified = 0
-        for criterion in self.criteria:
-            listings = self._fetch(criterion)
+        for criterion, listings in zip(self.criteria, self._fetch_by_criterion(), strict=True):
             seen += len(listings)
             namespace = self._cache_namespace(criterion)
             for listing in listings:
@@ -109,9 +115,22 @@ class ListingMonitor:
             self.scan_once()
             scans += 1
 
-    def _fetch(self, criterion: SearchCriteria) -> list[Listing]:
-        return self.scraper(
-            criterion.urls,
+    def _fetch_by_criterion(self) -> list[list[Listing]]:
+        if self.scraper is not None:
+            return [
+                self.scraper(
+                    criterion.urls,
+                    self.limit,
+                    self.headless,
+                    self.real_chrome,
+                    self.solve_cloudflare,
+                    self.concurrent_requests,
+                    self.concurrent_requests_per_domain,
+                )
+                for criterion in self.criteria
+            ]
+        return self.group_scraper(
+            [criterion.urls for criterion in self.criteria],
             self.limit,
             self.headless,
             self.real_chrome,
@@ -141,6 +160,26 @@ def _scrape_listing_pages(
 ) -> list[Listing]:
     return scrape_listing_pages(
         list(urls),
+        limit=limit,
+        headless=headless,
+        real_chrome=real_chrome,
+        solve_cloudflare=solve_cloudflare,
+        concurrent_requests=concurrent_requests,
+        concurrent_requests_per_domain=concurrent_requests_per_domain,
+    )
+
+
+def _scrape_listing_page_groups(
+    url_groups: Sequence[tuple[str, ...]],
+    limit: int,
+    headless: bool,
+    real_chrome: bool,
+    solve_cloudflare: bool,
+    concurrent_requests: int,
+    concurrent_requests_per_domain: int,
+) -> list[list[Listing]]:
+    return scrape_listing_page_groups(
+        list(url_groups),
         limit=limit,
         headless=headless,
         real_chrome=real_chrome,

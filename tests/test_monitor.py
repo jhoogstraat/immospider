@@ -134,6 +134,45 @@ def test_named_criteria_notify_separate_channels_and_cache_namespaces(tmp_path: 
     assert duesseldorf.sent == [("duesseldorf", shared)]
     assert cologne.sent == [("cologne", shared)]
 
+def test_default_monitor_fetches_all_criteria_in_one_group_scrape(tmp_path: Path) -> None:
+    duesseldorf_listing = _listing("1", "Düsseldorf")
+    cologne_listing = _listing("2", "Cologne")
+    grouped_calls = []
+
+    def group_scraper(
+        url_groups,
+        limit,
+        headless,
+        real_chrome,
+        solve_cloudflare,
+        concurrent_requests,
+        concurrent_requests_per_domain,
+    ):
+        grouped_calls.append(tuple(url_groups))
+        return [[duesseldorf_listing], [cologne_listing]]
+
+    with SeenListingCache(tmp_path / "seen.sqlite3") as cache:
+        monitor = ListingMonitor(
+            cache=cache,
+            notifier=RecordingNotifier(),
+            criteria=(
+                SearchCriteria("duesseldorf", ("https://www.immobilienscout24.de/duesseldorf",), RecordingNotifier()),
+                SearchCriteria("cologne", ("https://www.immowelt.de/cologne",), RecordingNotifier()),
+            ),
+            group_scraper=group_scraper,
+        )
+
+        warm = monitor.warm_cache()
+
+    assert grouped_calls == [
+        (
+            ("https://www.immobilienscout24.de/duesseldorf",),
+            ("https://www.immowelt.de/cologne",),
+        )
+    ]
+    assert warm.seen == 2
+
+
 def test_monitor_activity_log_reports_warm_and_scan(tmp_path: Path) -> None:
     first = _listing("1", "Warm")
     second = _listing("2", "New")
