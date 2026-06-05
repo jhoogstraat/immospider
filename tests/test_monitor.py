@@ -5,7 +5,7 @@ import pytest
 
 from cache import SeenListingCache
 from models import Listing
-from monitor import ListingMonitor
+from monitor import ListingMonitor, SearchCriteria
 
 
 class RecordingNotifier:
@@ -14,6 +14,16 @@ class RecordingNotifier:
 
     def notify(self, listing: Listing) -> bool:
         self.sent.append(listing)
+        return True
+
+
+class CriteriaRecordingNotifier:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.sent: list[tuple[str, Listing]] = []
+
+    def notify(self, listing: Listing) -> bool:
+        self.sent.append((self.name, listing))
         return True
 
 
@@ -78,6 +88,51 @@ def test_monitor_run_forever_propagates_keyboard_interrupt(tmp_path: Path) -> No
                 interval_seconds=1,
                 sleep=lambda seconds: (_ for _ in ()).throw(KeyboardInterrupt),
             )
+
+def test_named_criteria_notify_separate_channels_and_cache_namespaces(tmp_path: Path) -> None:
+    warm_listing = _listing("0", "Warm")
+    shared = _listing("1", "Shared")
+    duesseldorf = CriteriaRecordingNotifier("duesseldorf")
+    cologne = CriteriaRecordingNotifier("cologne")
+    requested_urls: list[tuple[str, ...]] = []
+    batches = {
+        ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"): [[warm_listing], [shared]],
+        ("https://www.immobilienscout24.de/cologne",): [[warm_listing], [shared]],
+    }
+
+    def scraper(urls, limit, headless, real_chrome, solve_cloudflare, concurrent_requests, concurrent_requests_per_domain):
+        key = tuple(urls)
+        requested_urls.append(key)
+        return batches[key].pop(0)
+
+    with SeenListingCache(tmp_path / "seen.sqlite3") as cache:
+        monitor = ListingMonitor(
+            cache=cache,
+            notifier=duesseldorf,
+            criteria=(
+                SearchCriteria(
+                    "duesseldorf",
+                    ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"),
+                    duesseldorf,
+                ),
+                SearchCriteria("cologne", ("https://www.immobilienscout24.de/cologne",), cologne),
+            ),
+            scraper=scraper,
+        )
+
+        warm = monitor.warm_cache()
+        scan = monitor.scan_once()
+
+    assert requested_urls == [
+        ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"),
+        ("https://www.immobilienscout24.de/cologne",),
+        ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"),
+        ("https://www.immobilienscout24.de/cologne",),
+    ]
+    assert warm == type(warm)(seen=2, new=2, notified=0)
+    assert scan == type(scan)(seen=2, new=2, notified=2)
+    assert duesseldorf.sent == [("duesseldorf", shared)]
+    assert cologne.sent == [("cologne", shared)]
 
 def test_monitor_activity_log_reports_warm_and_scan(tmp_path: Path) -> None:
     first = _listing("1", "Warm")

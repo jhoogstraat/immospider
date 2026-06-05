@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 
 from models import Listing, ListingSource
-from pages import immowelt
 
 from .common import ExtractionConfig, extract_with_config
 
@@ -26,12 +25,11 @@ CONFIG = ExtractionConfig(
 )
 SOURCE = ListingSource(
     name=CONFIG.source,
-    url=immowelt.URL,
     host=CONFIG.host,
     color=CONFIG.source_color,
     extract=lambda html, base_url: extract_listings(html, base_url),
 )
 
 
-def extract_listings(html: str, base_url: str = immowelt.URL) -> list[Listing]:
+def extract_listings(html: str, base_url: str = "https://www.immowelt.de") -> list[Listing]:
     return extract_with_config(html, base_url, CONFIG)

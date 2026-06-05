@@ -48,39 +48,40 @@ class SeenListingCache:
         self._connection.close()
         self._connection = None
 
-    def contains(self, listing: Listing) -> bool:
+    def contains(self, listing: Listing, namespace: str | None = None) -> bool:
         connection = self._require_connection()
         row = connection.execute(
             "SELECT 1 FROM seen_listings WHERE cache_key = ?",
-            (_cache_key(listing),),
+            (_cache_key(listing, namespace),),
         ).fetchone()
         return row is not None
 
-    def remember(self, listing: Listing) -> bool:
-        return self.add_if_new(listing)
+    def remember(self, listing: Listing, namespace: str | None = None) -> bool:
+        return self.add_if_new(listing, namespace)
 
-    def remember_many(self, listings: list[Listing]) -> int:
+    def remember_many(self, listings: list[Listing], namespace: str | None = None) -> int:
         inserted = 0
         for listing in listings:
-            if self.add_if_new(listing):
+            if self.add_if_new(listing, namespace):
                 inserted += 1
         return inserted
 
-    def add_if_new(self, listing: Listing) -> bool:
+    def add_if_new(self, listing: Listing, namespace: str | None = None) -> bool:
         connection = self._require_connection()
+        cache_key = _cache_key(listing, namespace)
         cursor = connection.execute(
             """
             INSERT INTO seen_listings (cache_key, source, listing_id, url)
             VALUES (?, ?, ?, ?)
             ON CONFLICT(cache_key) DO NOTHING
             """,
-            (_cache_key(listing), listing.source, listing.id, listing.url),
+            (cache_key, listing.source, listing.id, listing.url),
         )
         inserted = cursor.rowcount == 1
         if not inserted:
             connection.execute(
                 "UPDATE seen_listings SET last_seen_at = CURRENT_TIMESTAMP WHERE cache_key = ?",
-                (_cache_key(listing),),
+                (cache_key,),
             )
         connection.commit()
         return inserted
@@ -94,5 +95,6 @@ class SeenListingCache:
         return self._connection
 
 
-def _cache_key(listing: Listing) -> str:
-    return f"{listing.source}:{listing.id}" if listing.id is not None else listing.url
+def _cache_key(listing: Listing, namespace: str | None = None) -> str:
+    listing_key = f"{listing.source}:{listing.id}" if listing.id is not None else listing.url
+    return listing_key if namespace is None else f"{namespace}:{listing_key}"

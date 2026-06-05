@@ -9,10 +9,9 @@ import threading
 from pathlib import Path
 
 from cache import DEFAULT_CACHE_PATH, SeenListingCache
-from monitor import ListingMonitor
+from monitor import ListingMonitor, SearchCriteria
 from notifications import AppriseNotifier
 
-from pages import DEFAULT_URLS
 from scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN, listing_dicts, scrape_listing_pages
 
 
@@ -22,10 +21,14 @@ def main(argv: list[str] | None = None) -> int:
         description="Scrape latest property listings from configured search URLs with Scrapling.",
     )
     parser.add_argument(
-        "--url",
+        "--criteria",
         action="append",
-        dest="urls",
-        help="Search URL to scrape. Repeat to scrape multiple pages. Defaults to the built-in pages.",
+        dest="criteria",
+        metavar="NAME=URL",
+        help=(
+            "Named search criteria to scrape. Repeat with the same NAME to include multiple domain search URLs "
+            "in one notification channel."
+        ),
     )
     parser.add_argument("--limit", type=_positive_int, default=20, help="Maximum listings to fetch per scan.")
     parser.add_argument("--output", type=Path, help="Write one-shot JSON output to this path instead of stdout.")
@@ -34,6 +37,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--solve-cloudflare", action="store_true", help="Try Scrapling's Cloudflare challenge solver when a page is actually challenged.")
     parser.add_argument("--monitor", action="store_true", help="Continuously scan, warming the cache before notifications.")
     parser.add_argument("--notify-url", action="append", dest="notify_urls", help="Apprise notification URL. Repeat for multiple endpoints.")
+    parser.add_argument(
+        "--criteria-notify-url",
+        action="append",
+        dest="criteria_notify_urls",
+        metavar="NAME=APPRISE_URL",
+        help="Apprise notification URL for a named --criteria channel. Repeat for multiple endpoints.",
+    )
     parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE_PATH, help="SQLite cache path for seen listings.")
     parser.add_argument("--interval", type=_positive_float, default=60.0, help="Seconds between monitor scans.")
     parser.add_argument("--concurrency", type=_positive_int, default=DEFAULT_CONCURRENT_REQUESTS, help="Maximum listing pages fetched at the same time.")
@@ -45,16 +55,36 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    urls = args.urls if args.urls is not None else DEFAULT_URLS
+    criteria_urls = _group_keyed_values(args.criteria or [], "--criteria", parser)
+    if args.criteria_notify_urls and not criteria_urls:
+        parser.error("--criteria-notify-url requires --criteria")
+    if not criteria_urls:
+        parser.error("at least one --criteria NAME=URL is required")
+    urls = tuple(url for criterion_urls in criteria_urls.values() for url in criterion_urls)
     if args.monitor:
-        if not args.notify_urls:
-            parser.error("--monitor requires at least one --notify-url")
-        notifier = AppriseNotifier(args.notify_urls)
+        criteria_notify_urls = _group_keyed_values(args.criteria_notify_urls or [], "--criteria-notify-url", parser)
+        fallback_notify_urls = tuple(args.notify_urls or ())
+        missing = [name for name in criteria_urls if name not in criteria_notify_urls and not fallback_notify_urls]
+        if missing:
+            parser.error(
+                "--criteria in monitor mode requires --criteria-notify-url NAME=URL or --notify-url for: "
+                + ", ".join(missing)
+            )
+        criteria = tuple(
+            SearchCriteria(
+                name,
+                tuple(criteria_urls[name]),
+                AppriseNotifier([*criteria_notify_urls.get(name, ()), *fallback_notify_urls]),
+            )
+            for name in criteria_urls
+        )
+        notifier = criteria[0].notifier
         with SeenListingCache(args.cache) as cache:
             monitor = ListingMonitor(
                 urls,
                 cache=cache,
                 notifier=notifier,
+                criteria=criteria,
                 limit=args.limit,
                 headless=not args.headful,
                 real_chrome=args.real_chrome,
@@ -99,6 +129,16 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sys.stdout.write(payload + "\n")
     return 0
+
+
+def _group_keyed_values(values: list[str], option: str, parser: argparse.ArgumentParser) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
+    for value in values:
+        name, separator, item = value.partition("=")
+        if not separator or not name or not item:
+            parser.error(f"{option} must use NAME=VALUE")
+        grouped.setdefault(name, []).append(item)
+    return grouped
 
 
 def _activity_log(message: str) -> None:

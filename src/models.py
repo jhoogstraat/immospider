@@ -24,7 +24,6 @@ class Listing:
 @dataclass(frozen=True, slots=True)
 class ListingSource:
     name: str
-    url: str
     host: str
     color: int
     extract: Callable[[str, str], list[Listing]]

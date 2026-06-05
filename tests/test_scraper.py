@@ -1,5 +1,5 @@
 import scraper
-from pages import DEFAULT_URLS
+from pages import fetch_options_for_url
 from sources import immobilienscout24, immowelt
 from scraper import extract_listings, scrape_listing_pages
 
@@ -64,7 +64,7 @@ def test_extracts_listing_from_inline_result_list_model() -> None:
     </script>
     """
 
-    listings = extract_listings(html)
+    listings = extract_listings(html, "https://www.immobilienscout24.de/search")
 
     assert len(listings) == 1
     listing = listings[0]
@@ -90,7 +90,7 @@ def test_deduplicates_json_listings_by_id() -> None:
     </script>
     """
 
-    listings = extract_listings(html)
+    listings = extract_listings(html, "https://www.immobilienscout24.de/search")
 
     assert [listing.id for listing in listings] == ["1", "2"]
     assert [listing.title for listing in listings] == ["First", "Second"]
@@ -106,7 +106,7 @@ def test_falls_back_to_visible_listing_card() -> None:
     </article>
     """
 
-    listings = extract_listings(html)
+    listings = extract_listings(html, "https://www.immobilienscout24.de/search")
 
     assert len(listings) == 1
     listing = listings[0]
@@ -235,5 +235,32 @@ def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
     assert [page.requested_url for page in pages] == ["https://a.test", "https://b.test"]
 
 
-def test_default_pages_include_date_desc_immowelt_search() -> None:
-    assert any(url.startswith("https://www.immowelt.de/classified-search") and "order=DateDesc" in url for url in DEFAULT_URLS)
+
+def test_page_fetch_options_control_browser_options() -> None:
+    options = scraper._browser_options(
+        page_options={"google_search": False, "solve_cloudflare": True},
+        headless=True,
+        real_chrome=False,
+        solve_cloudflare=False,
+    )
+
+    assert options["google_search"] is False
+    assert options["solve_cloudflare"] is True
+
+
+def test_cli_cloudflare_flag_overrides_page_default() -> None:
+    options = scraper._browser_options(
+        page_options={"solve_cloudflare": False},
+        headless=True,
+        real_chrome=False,
+        solve_cloudflare=True,
+    )
+
+    assert options["solve_cloudflare"] is True
+
+
+def test_default_page_modules_define_fetch_options() -> None:
+    assert fetch_options_for_url("https://www.immobilienscout24.de/search")["google_search"] is True
+    assert fetch_options_for_url("https://www.immobilienscout24.de/search")["solve_cloudflare"] is False
+    assert fetch_options_for_url("https://www.immowelt.de/classified-search?order=DateDesc")["google_search"] is False
+    assert fetch_options_for_url("https://www.immowelt.de/classified-search?order=DateDesc")["solve_cloudflare"] is False

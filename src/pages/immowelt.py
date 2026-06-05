@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-URL = (
-    "https://www.immowelt.de/classified-search"
-    "?distributionTypes=Buy,Buy_Auction,Compulsory_Auction"
-    "&estateTypes=House,Apartment"
-    "&locations=AD08DE2112"
-    "&order=DateDesc"
-)
+HOST = "www.immowelt.de"
+
+FETCH_OPTIONS = {
+    "google_search": False,
+    "solve_cloudflare": False,
+}

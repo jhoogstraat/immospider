@@ -2,14 +2,19 @@ from __future__ import annotations
 
 from . import immobilienscout24, immowelt
 
-IMMOBILIENSCOUT24_URL = immobilienscout24.URL
-IMMOWELT_URL = immowelt.URL
-DEFAULT_URL = IMMOBILIENSCOUT24_URL
-DEFAULT_URLS = (IMMOBILIENSCOUT24_URL, IMMOWELT_URL)
+FETCH_OPTIONS_BY_HOST = {
+    immobilienscout24.HOST: immobilienscout24.FETCH_OPTIONS,
+    immowelt.HOST: immowelt.FETCH_OPTIONS,
+}
+
+
+def fetch_options_for_url(url: str) -> dict[str, object]:
+    from urllib.parse import urlparse
+
+    return dict(FETCH_OPTIONS_BY_HOST.get(urlparse(url).netloc, {}))
+
 
 __all__ = [
-    "DEFAULT_URL",
-    "DEFAULT_URLS",
-    "IMMOBILIENSCOUT24_URL",
-    "IMMOWELT_URL",
+    "FETCH_OPTIONS_BY_HOST",
+    "fetch_options_for_url",
 ]
