@@ -38,7 +38,7 @@ def test_first_monitor_fetch_warms_cache_without_notifications(tmp_path: Path) -
             ["https://www.immobilienscout24.de/search"],
             cache=cache,
             notifier=notifier,
-            scraper=lambda urls, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: batches.pop(0),
+            group_scraper=lambda url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: [batches.pop(0)],
         )
 
         warm = monitor.warm_cache()
@@ -64,7 +64,7 @@ def test_monitor_run_forever_warms_before_first_scan(tmp_path: Path) -> None:
             ["https://www.immowelt.de/classified-search?order=DateDesc"],
             cache=cache,
             notifier=notifier,
-            scraper=lambda urls, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: batches.pop(0),
+            group_scraper=lambda url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: [batches.pop(0)],
         )
 
         monitor.run_forever(interval_seconds=1, max_scans=1, sleep=lambda seconds: None)
@@ -80,7 +80,7 @@ def test_monitor_run_forever_propagates_keyboard_interrupt(tmp_path: Path) -> No
             ["https://www.immowelt.de/classified-search?order=DateDesc"],
             cache=cache,
             notifier=notifier,
-            scraper=lambda urls, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: [_listing("1", "Warm")],
+            group_scraper=lambda url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: [[_listing("1", "Warm")]],
         )
 
         with pytest.raises(KeyboardInterrupt):
@@ -94,16 +94,15 @@ def test_named_criteria_notify_separate_channels_and_cache_namespaces(tmp_path: 
     shared = _listing("1", "Shared")
     duesseldorf = CriteriaRecordingNotifier("duesseldorf")
     cologne = CriteriaRecordingNotifier("cologne")
-    requested_urls: list[tuple[str, ...]] = []
-    batches = {
-        ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"): [[warm_listing], [shared]],
-        ("https://www.immobilienscout24.de/cologne",): [[warm_listing], [shared]],
-    }
+    requested_groups: list[tuple[tuple[str, ...], ...]] = []
+    batches = [
+        [[warm_listing], [warm_listing]],
+        [[shared], [shared]],
+    ]
 
-    def scraper(urls, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
-        key = tuple(urls)
-        requested_urls.append(key)
-        return batches[key].pop(0)
+    def group_scraper(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
+        requested_groups.append(tuple(url_groups))
+        return batches.pop(0)
 
     with SeenListingCache(tmp_path / "seen.sqlite3") as cache:
         monitor = ListingMonitor(
@@ -117,17 +116,21 @@ def test_named_criteria_notify_separate_channels_and_cache_namespaces(tmp_path: 
                 ),
                 SearchCriteria("cologne", ("https://www.immobilienscout24.de/cologne",), cologne),
             ),
-            scraper=scraper,
+            group_scraper=group_scraper,
         )
 
         warm = monitor.warm_cache()
         scan = monitor.scan_once()
 
-    assert requested_urls == [
-        ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"),
-        ("https://www.immobilienscout24.de/cologne",),
-        ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"),
-        ("https://www.immobilienscout24.de/cologne",),
+    assert requested_groups == [
+        (
+            ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"),
+            ("https://www.immobilienscout24.de/cologne",),
+        ),
+        (
+            ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"),
+            ("https://www.immobilienscout24.de/cologne",),
+        ),
     ]
     assert warm == type(warm)(seen=2, new=2, notified=0)
     assert scan == type(scan)(seen=2, new=2, notified=2)
@@ -183,7 +186,7 @@ def test_monitor_activity_log_reports_warm_and_scan(tmp_path: Path) -> None:
             ["https://www.immobilienscout24.de/search", "https://www.immowelt.de/classified-search?order=DateDesc"],
             cache=cache,
             notifier=RecordingNotifier(),
-            scraper=lambda urls, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: batches.pop(0),
+            group_scraper=lambda url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain: [batches.pop(0)],
             activity_log=messages.append,
         )
 

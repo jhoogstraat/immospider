@@ -7,12 +7,7 @@ from dataclasses import dataclass
 from cache import SeenListingCache
 from models import Listing
 from notifications import Notifier
-from scraper import (
-    DEFAULT_CONCURRENT_REQUESTS,
-    DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
-    scrape_listing_page_groups,
-    scrape_listing_pages,
-)
+from scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN, scrape_listing_page_groups
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +23,6 @@ class SearchCriteria:
     urls: tuple[str, ...]
     notifier: Notifier
 
-ScrapeListings = Callable[[Sequence[str], int, bool, bool, int, int], list[Listing]]
 ScrapeListingGroups = Callable[[Sequence[tuple[str, ...]], int, bool, bool, int, int], list[list[Listing]]]
 ActivityLog = Callable[[str], None]
 
@@ -48,7 +42,6 @@ class ListingMonitor:
         real_chrome: bool = False,
         concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
         concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
-        scraper: ScrapeListings | None = None,
         group_scraper: ScrapeListingGroups | None = None,
         activity_log: ActivityLog | None = None,
     ) -> None:
@@ -65,7 +58,6 @@ class ListingMonitor:
         self.real_chrome = real_chrome
         self.concurrent_requests = concurrent_requests
         self.concurrent_requests_per_domain = concurrent_requests_per_domain
-        self.scraper = scraper
         self.group_scraper = group_scraper or _scrape_listing_page_groups
         self.activity_log = activity_log
 
@@ -114,18 +106,6 @@ class ListingMonitor:
             scans += 1
 
     def _fetch_by_criterion(self) -> list[list[Listing]]:
-        if self.scraper is not None:
-            return [
-                self.scraper(
-                    criterion.urls,
-                    self.limit,
-                    self.headless,
-                    self.real_chrome,
-                    self.concurrent_requests,
-                    self.concurrent_requests_per_domain,
-                )
-                for criterion in self.criteria
-            ]
         return self.group_scraper(
             [criterion.urls for criterion in self.criteria],
             self.limit,
@@ -145,22 +125,6 @@ class ListingMonitor:
             self.activity_log(message)
 
 
-def _scrape_listing_pages(
-    urls: Sequence[str],
-    limit: int,
-    headless: bool,
-    real_chrome: bool,
-    concurrent_requests: int,
-    concurrent_requests_per_domain: int,
-) -> list[Listing]:
-    return scrape_listing_pages(
-        list(urls),
-        limit=limit,
-        headless=headless,
-        real_chrome=real_chrome,
-        concurrent_requests=concurrent_requests,
-        concurrent_requests_per_domain=concurrent_requests_per_domain,
-    )
 
 
 def _scrape_listing_page_groups(

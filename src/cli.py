@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import signal
 from datetime import datetime
 import sys
@@ -12,7 +11,7 @@ from cache import DEFAULT_CACHE_PATH, SeenListingCache
 from monitor import ListingMonitor, SearchCriteria
 from notifications import AppriseNotifier
 
-from scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN, listing_dicts, scrape_listing_pages
+from scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,10 +30,8 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--limit", type=_positive_int, default=20, help="Maximum listings to fetch per scan.")
-    parser.add_argument("--output", type=Path, help="Write one-shot JSON output to this path instead of stdout.")
     parser.add_argument("--headful", action="store_true", help="Run browser visibly for manual anti-bot challenges.")
     parser.add_argument("--real-chrome", action="store_true", help="Use installed Google Chrome instead of bundled Chromium.")
-    parser.add_argument("--monitor", action="store_true", help="Continuously scan, warming the cache before notifications.")
     parser.add_argument("--notify-url", action="append", dest="notify_urls", help="Apprise notification URL. Repeat for multiple endpoints.")
     parser.add_argument(
         "--criteria-notify-url",
@@ -60,71 +57,55 @@ def main(argv: list[str] | None = None) -> int:
     if not criteria_urls:
         parser.error("at least one --criteria NAME=URL is required")
     urls = tuple(url for criterion_urls in criteria_urls.values() for url in criterion_urls)
-    if args.monitor:
-        criteria_notify_urls = _group_keyed_values(args.criteria_notify_urls or [], "--criteria-notify-url", parser)
-        fallback_notify_urls = tuple(args.notify_urls or ())
-        missing = [name for name in criteria_urls if name not in criteria_notify_urls and not fallback_notify_urls]
-        if missing:
-            parser.error(
-                "--criteria in monitor mode requires --criteria-notify-url NAME=URL or --notify-url for: "
-                + ", ".join(missing)
-            )
-        criteria = tuple(
-            SearchCriteria(
-                name,
-                tuple(criteria_urls[name]),
-                AppriseNotifier([*criteria_notify_urls.get(name, ()), *fallback_notify_urls]),
-            )
-            for name in criteria_urls
+    criteria_notify_urls = _group_keyed_values(args.criteria_notify_urls or [], "--criteria-notify-url", parser)
+    fallback_notify_urls = tuple(args.notify_urls or ())
+    missing = [name for name in criteria_urls if name not in criteria_notify_urls and not fallback_notify_urls]
+    if missing:
+        parser.error(
+            "--criteria requires --criteria-notify-url NAME=URL or --notify-url for: "
+            + ", ".join(missing)
         )
-        notifier = criteria[0].notifier
-        with SeenListingCache(args.cache) as cache:
-            monitor = ListingMonitor(
-                urls,
-                cache=cache,
-                notifier=notifier,
-                criteria=criteria,
-                limit=args.limit,
-                headless=not args.headful,
-                real_chrome=args.real_chrome,
-                concurrent_requests=args.concurrency,
-                concurrent_requests_per_domain=args.per_domain_concurrency,
-                activity_log=_activity_log,
-            )
-            stop_requested = threading.Event()
-            original_sigint = signal.getsignal(signal.SIGINT)
-            original_sigterm = signal.getsignal(signal.SIGTERM)
-
-            def request_stop(signum: int, frame: object) -> None:
-                if not stop_requested.is_set():
-                    _activity_log("stop requested; finishing current scan")
-                    stop_requested.set()
-
-            signal.signal(signal.SIGINT, request_stop)
-            signal.signal(signal.SIGTERM, request_stop)
-            try:
-                monitor.run_forever(interval_seconds=args.interval, sleep=stop_requested.wait)
-            finally:
-                signal.signal(signal.SIGINT, original_sigint)
-                signal.signal(signal.SIGTERM, original_sigterm)
-            if stop_requested.is_set():
-                _activity_log("monitor stopped")
-                return 130
-        return 0
-
-    listings = scrape_listing_pages(
-        urls,
-        limit=args.limit,
-        headless=not args.headful,
-        real_chrome=args.real_chrome,
-        concurrent_requests=args.concurrency,
-        concurrent_requests_per_domain=args.per_domain_concurrency,
+    criteria = tuple(
+        SearchCriteria(
+            name,
+            tuple(criteria_urls[name]),
+            AppriseNotifier([*criteria_notify_urls.get(name, ()), *fallback_notify_urls]),
+        )
+        for name in criteria_urls
     )
-    payload = json.dumps(listing_dicts(listings), ensure_ascii=False, indent=2)
-    if args.output is not None:
-        args.output.write_text(payload + "\n", encoding="utf-8")
-    else:
-        sys.stdout.write(payload + "\n")
+    notifier = criteria[0].notifier
+    with SeenListingCache(args.cache) as cache:
+        monitor = ListingMonitor(
+            urls,
+            cache=cache,
+            notifier=notifier,
+            criteria=criteria,
+            limit=args.limit,
+            headless=not args.headful,
+            real_chrome=args.real_chrome,
+            concurrent_requests=args.concurrency,
+            concurrent_requests_per_domain=args.per_domain_concurrency,
+            activity_log=_activity_log,
+        )
+        stop_requested = threading.Event()
+        original_sigint = signal.getsignal(signal.SIGINT)
+        original_sigterm = signal.getsignal(signal.SIGTERM)
+
+        def request_stop(signum: int, frame: object) -> None:
+            if not stop_requested.is_set():
+                _activity_log("stop requested; finishing current scan")
+                stop_requested.set()
+
+        signal.signal(signal.SIGINT, request_stop)
+        signal.signal(signal.SIGTERM, request_stop)
+        try:
+            monitor.run_forever(interval_seconds=args.interval, sleep=stop_requested.wait)
+        finally:
+            signal.signal(signal.SIGINT, original_sigint)
+            signal.signal(signal.SIGTERM, original_sigterm)
+        if stop_requested.is_set():
+            _activity_log("monitor stopped")
+            return 130
     return 0
 
 

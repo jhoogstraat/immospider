@@ -1,6 +1,6 @@
 from __future__ import annotations
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any
 from scrapling.fetchers import AsyncStealthySession
 from models import Listing
@@ -24,46 +24,6 @@ class _FetchedPage:
     html: str
 
 
-def scrape_latest_listings(
-    url: str,
-    limit: int = 20,
-    headless: bool = True,
-    real_chrome: bool = False,
-) -> list[Listing]:
-    """Fetch one listing search page and return listings in page order."""
-    pages = _fetch_pages_concurrently(
-        (url,),
-        headless=headless,
-        real_chrome=real_chrome,
-        concurrent_requests=1,
-        concurrent_requests_per_domain=1,
-    )
-    page = pages[0]
-    source = source_for_url(page.requested_url)
-    return source.extract(page.html, page.requested_url)[:limit]
-
-
-def scrape_listing_pages(
-    urls: tuple[str, ...] | list[str],
-    limit: int = 20,
-    headless: bool = True,
-    real_chrome: bool = False,
-    concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
-    concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
-) -> list[Listing]:
-    """Fetch listing search pages and return deduplicated, page-ordered listings."""
-    pages = _fetch_pages_concurrently(
-        urls,
-        headless=headless,
-        real_chrome=real_chrome,
-        concurrent_requests=concurrent_requests,
-        concurrent_requests_per_domain=concurrent_requests_per_domain,
-    )
-    listings: list[Listing] = []
-    for page in pages:
-        source = source_for_url(page.requested_url)
-        listings.extend(source.extract(page.html, page.requested_url)[:limit])
-    return dedupe(listings)[:limit]
 
 def scrape_listing_page_groups(
     url_groups: tuple[tuple[str, ...], ...] | list[tuple[str, ...]],
@@ -215,10 +175,6 @@ def _browser_options(
     return options
 
 
-
-
-def listing_dicts(listings: list[Listing]) -> list[dict[str, Any]]:
-    return [asdict(listing) for listing in listings]
 
 
 def extract_listings(html: str, base_url: str) -> list[Listing]:

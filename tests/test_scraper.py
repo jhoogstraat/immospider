@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import scraper
 from pages import fetch_options_for_url
 from sources import immobilienscout24, immowelt, kleinanzeigen, source_for_url
-from scraper import extract_listings, scrape_latest_listings, scrape_listing_page_groups, scrape_listing_pages
+from scraper import extract_listings, scrape_listing_page_groups
 
 
 def test_extracts_listing_from_embedded_json() -> None:
@@ -294,40 +294,6 @@ def test_extracts_kleinanzeigen_listing_from_visible_card() -> None:
     assert listing.google_maps_url == "https://www.google.com/maps/search/?api=1&query=40477+Pempelfort"
 
 
-def test_scrapes_latest_listing_through_spider_fetch(monkeypatch) -> None:
-    url = "https://www.immobilienscout24.de/search"
-
-    def fake_fetch_pages(
-        urls,
-        *,
-        headless: bool,
-        real_chrome: bool,
-        concurrent_requests: int,
-        concurrent_requests_per_domain: int,
-    ):
-        assert urls == (url,)
-        assert headless is False
-        assert real_chrome is True
-        assert concurrent_requests == 1
-        assert concurrent_requests_per_domain == 1
-        return [
-            scraper._FetchedPage(
-                position=0,
-                requested_url=url,
-                final_url=url,
-                html="""
-                    <script type="application/json">
-                    {"resultListModel":{"realEstates":[{"id":"1", "url":"/expose/1", "title":"Scout"}]}}
-                    </script>
-                """,
-            )
-        ]
-
-    monkeypatch.setattr(scraper, "_fetch_pages_concurrently", fake_fetch_pages)
-
-    listings = scrape_latest_listings(url, limit=1, headless=False, real_chrome=True)
-
-    assert [listing.url for listing in listings] == ["https://www.immobilienscout24.de/expose/1"]
 
 
 def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
@@ -370,7 +336,8 @@ def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
 
     monkeypatch.setattr(scraper, "_fetch_pages_concurrently", fake_fetch_pages)
 
-    listings = scrape_listing_pages(tuple(pages), limit=10, concurrent_requests=8, concurrent_requests_per_domain=2)
+    grouped = scrape_listing_page_groups([tuple(pages)], limit=10, concurrent_requests=8, concurrent_requests_per_domain=2)
+    listings = grouped[0]
 
     assert [listing.url for listing in listings] == [
         "https://www.immobilienscout24.de/expose/1",

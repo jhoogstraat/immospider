@@ -37,7 +37,6 @@ def test_cli_builds_named_criteria_with_separate_notification_urls(monkeypatch, 
 
     result = cli.main(
         [
-            "--monitor",
             "--cache",
             str(tmp_path / "seen.sqlite3"),
             "--criteria",
