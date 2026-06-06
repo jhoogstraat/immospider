@@ -114,7 +114,6 @@ class _ListingPagesSpider(Spider):
             "stealth",
             AsyncStealthySession(
                 **_browser_options(
-                    page_options={},
                     headless=self.headless,
                     real_chrome=self.real_chrome,
                     max_pages=self.concurrent_requests,
@@ -130,12 +129,7 @@ class _ListingPagesSpider(Spider):
                 sid="stealth",
                 callback=self.parse,
                 meta={"position": position, "requested_url": url},
-                **_browser_options(
-                    page_options=fetch_options_for_url(url),
-                    headless=self.headless,
-                    real_chrome=self.real_chrome,
-                    max_pages=self.concurrent_requests,
-                ),
+                **fetch_options_for_url(url),
             )
 
     async def parse(self, response: Response):
@@ -151,10 +145,9 @@ class _ListingPagesSpider(Spider):
 
 def _browser_options(
     *,
-    page_options: dict[str, object],
     headless: bool,
     real_chrome: bool,
-    max_pages: int = 1,
+    max_pages: int,
 ) -> dict[str, Any]:
     options: dict[str, Any] = {
         "headless": headless,
@@ -171,7 +164,6 @@ def _browser_options(
         "block_ads": True,
         "max_pages": max_pages,
     }
-    options.update(page_options)
     return options
 
 

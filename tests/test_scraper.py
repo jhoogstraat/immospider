@@ -456,15 +456,12 @@ def test_source_registry_supports_kleinanzeigen_urls() -> None:
     assert source.host == "www.kleinanzeigen.de"
 
 
-def test_page_fetch_options_control_browser_options() -> None:
-    options = scraper._browser_options(
-        page_options={"google_search": False, "solve_cloudflare": True},
-        headless=True,
-        real_chrome=False,
-    )
+def test_browser_options_configure_session_only() -> None:
+    options = scraper._browser_options(headless=True, real_chrome=False, max_pages=4)
 
-    assert options["google_search"] is False
-    assert options["solve_cloudflare"] is True
+    assert options["headless"] is True
+    assert options["real_chrome"] is False
+    assert options["max_pages"] == 4
 
 
 
