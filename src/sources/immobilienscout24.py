@@ -23,6 +23,15 @@ CONFIG = ExtractionConfig(
     published_keys=("publishDate", "creationDate", "modifiedDate", "published", "datePublished"),
     image_keys=("image", "imageUrl", "picture", "pictureUrl", "titlePicture"),
     nested_listing_key="resultlist.realEstate",
+    listing_link_selectors=(
+        '[data-testid*="result-list-entry"] a[href*="/expose/"]',
+        'article a[href*="/expose/"]',
+        'a[href*="/expose/"]',
+    ),
+    card_container_keywords=("result-list-entry", "result-list", "expose", "is24"),
+    address_selectors=('[data-testid*="address"]', '[class*="address"]', '[class*="location"]'),
+    provider_selectors=('[data-testid*="provider"]', '[class*="provider"]', '[class*="realtor"]'),
+    published_selectors=('[data-testid*="date"]', '[class*="date"]'),
 )
 SOURCE = ListingSource(
     name=CONFIG.source,

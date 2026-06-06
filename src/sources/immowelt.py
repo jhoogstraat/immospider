@@ -22,6 +22,17 @@ CONFIG = ExtractionConfig(
     provider_keys=("companyName", "provider", "contactName", "providerName", "seller", "brandName"),
     published_keys=("publishDate", "creationDate", "modifiedDate", "published", "datePublished"),
     image_keys=("image", "imageUrl", "picture", "pictureUrl", "thumbnailUrl", "coverImage"),
+    listing_link_selectors=(
+        '[data-test*="estate-card"] a[href*="/expose/"]',
+        '[data-testid*="estate-card"] a[href*="/expose/"]',
+        'article a[href*="/expose/"]',
+        'a[href*="/expose/"]',
+        'a[href*="/angebot/"]',
+    ),
+    card_container_keywords=("estate-card", "classified", "property", "teaser", "angebot", "expose"),
+    address_selectors=('[data-test*="address"]', '[data-testid*="address"]', '[class*="address"]', '[class*="location"]'),
+    provider_selectors=('[data-test*="provider"]', '[data-testid*="provider"]', '[class*="provider"]', '[class*="seller"]'),
+    published_selectors=('[data-test*="date"]', '[data-testid*="date"]', '[class*="date"]'),
 )
 SOURCE = ListingSource(
     name=CONFIG.source,

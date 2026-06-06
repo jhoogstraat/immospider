@@ -119,6 +119,37 @@ def test_falls_back_to_visible_listing_card() -> None:
     assert listing.rooms == 2.0
 
 
+
+def test_extracts_immobilienscout24_visible_card_with_scrapling_selectors() -> None:
+    html = """
+    <div data-testid="result-list-entry">
+      <a href="/expose/153902002?referrer=RESULT_LIST_LISTING">
+        <h2>Loft am Medienhafen</h2>
+      </a>
+      <span data-testid="address">Speditionstraße 8, 40221 Düsseldorf</span>
+      <span class="result-list-entry__primary-criterion">1.450 €</span>
+      <span class="result-list-entry__primary-criterion">80 m²</span>
+      <span class="result-list-entry__primary-criterion">2 Zimmer</span>
+      <span data-testid="provider">Scout Makler GmbH</span>
+      <time data-testid="date">Heute</time>
+      <img data-src="/images/153902002.jpg" />
+    </div>
+    """
+
+    listings = immobilienscout24.extract_listings(html)
+
+    assert len(listings) == 1
+    listing = listings[0]
+    assert listing.id == "153902002"
+    assert listing.title == "Loft am Medienhafen"
+    assert listing.address == "Speditionstraße 8, 40221 Düsseldorf"
+    assert listing.price_eur == 1450.0
+    assert listing.living_area_m2 == 80.0
+    assert listing.rooms == 2.0
+    assert listing.provider == "Scout Makler GmbH"
+    assert listing.published == "Heute"
+    assert listing.image_url == "https://www.immobilienscout24.de/images/153902002.jpg"
+
 def test_extracts_immowelt_listing_from_embedded_json() -> None:
     html = """
     <script id="__NEXT_DATA__" type="application/json">
@@ -163,6 +194,38 @@ def test_extracts_immowelt_listing_from_embedded_json() -> None:
     assert listing.source_color == 0xF05A28
     assert listing.image_url == "https://www.immowelt.de/images/1a2b3c.jpg"
     assert listing.google_maps_url == "https://www.google.com/maps/search/?api=1&query=40213%2C+D%C3%BCsseldorf"
+
+
+def test_extracts_immowelt_visible_card_with_scrapling_selectors() -> None:
+    html = """
+    <section data-test="estate-card">
+      <a href="/expose/5f6g7h">
+        <h2>Stadthaus mit Garten</h2>
+      </a>
+      <div data-test="address">40545 Düsseldorf-Oberkassel</div>
+      <strong>899.000 €</strong>
+      <span>142 m²</span>
+      <span>5 Zimmer</span>
+      <span data-test="provider">Immowelt Partner</span>
+      <span data-test="date">Gestern</span>
+      <img src="/images/5f6g7h.jpg" />
+    </section>
+    """
+
+    listings = immowelt.extract_listings(html)
+
+    assert len(listings) == 1
+    listing = listings[0]
+    assert listing.id == "5f6g7h"
+    assert listing.url == "https://www.immowelt.de/expose/5f6g7h"
+    assert listing.title == "Stadthaus mit Garten"
+    assert listing.address == "40545 Düsseldorf-Oberkassel"
+    assert listing.price_eur == 899000.0
+    assert listing.living_area_m2 == 142.0
+    assert listing.rooms == 5.0
+    assert listing.provider == "Immowelt Partner"
+    assert listing.published == "Gestern"
+    assert listing.image_url == "https://www.immowelt.de/images/5f6g7h.jpg"
 
 
 def test_extracts_kleinanzeigen_listing_from_visible_card() -> None:

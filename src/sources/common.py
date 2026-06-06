@@ -3,20 +3,21 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from html import unescape
 from typing import Any
 from urllib.parse import quote_plus, urljoin, urlparse
 
+from scrapling.parser import Selector
+
 from models import Listing
 
-_JSON_SCRIPT_RE = re.compile(
-    r'<script[^>]+(?:type=["\']application/(?:ld\+)?json["\']|id=["\']__NEXT_DATA__["\'])[^>]*>(.*?)</script>',
-    re.IGNORECASE | re.DOTALL,
-)
 _SPACE_RE = re.compile(r"\s+")
 _PRICE_RE = re.compile(r"(?P<value>[\d.]+(?:,\d+)?)\s*€")
 _SIZE_RE = re.compile(r"(?P<value>[\d.]+(?:,\d+)?)\s*m²")
 _ROOMS_RE = re.compile(r"(?P<value>\d+(?:,\d+)?)\s*(?:Zi|Zimmer)", re.IGNORECASE)
+_JSON_SCRIPT_SELECTORS = ('script[type="application/json"]', 'script[type="application/ld+json"]', 'script#__NEXT_DATA__')
+_LISTING_LINK_SELECTORS = ('a[href*="/expose/"]', 'a[href*="/angebot/"]')
+_HEADING_SELECTORS = ("h1::text", "h2::text", "h3::text", '[data-testid*="title"]::text', '[data-test*="title"]::text')
+_LISTING_CONTAINERS = ("article", "li", "section", "div")
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,13 +38,19 @@ class ExtractionConfig:
     published_keys: tuple[str, ...]
     image_keys: tuple[str, ...]
     nested_listing_key: str | None = None
+    listing_link_selectors: tuple[str, ...] = _LISTING_LINK_SELECTORS
+    card_container_keywords: tuple[str, ...] = ()
+    address_selectors: tuple[str, ...] = ()
+    provider_selectors: tuple[str, ...] = ()
+    published_selectors: tuple[str, ...] = ()
 
 
 def extract_with_config(html: str, base_url: str, config: ExtractionConfig) -> list[Listing]:
-    listings = _extract_from_json_scripts(html, base_url, config)
-    listings.extend(_extract_from_inline_models(html, base_url, config))
+    page = Selector(html)
+    listings = _extract_from_json_scripts(page, base_url, config)
+    listings.extend(_extract_from_inline_models(page, base_url, config))
     if not listings:
-        listings = _extract_from_cards(html, base_url, config)
+        listings = _extract_from_cards(page, base_url, config)
     return dedupe(listings)
 
 
@@ -66,40 +73,54 @@ def listing_key(listing: Listing) -> str:
     return f"{listing.source}:{listing.id}" if listing.id is not None else listing.url
 
 
-def _extract_from_json_scripts(html: str, base_url: str, config: ExtractionConfig) -> list[Listing]:
+def _extract_from_json_scripts(page: Selector, base_url: str, config: ExtractionConfig) -> list[Listing]:
     found: list[Listing] = []
-    for match in _JSON_SCRIPT_RE.finditer(html):
-        raw = unescape(match.group(1)).strip()
-        if not raw or not config.data_re.search(raw):
+    for script in _json_script_elements(page):
+        raw = str(script.text or "")
+        if not config.data_re.search(raw):
             continue
         try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError:
+            payload = script.json()
+        except (json.JSONDecodeError, ValueError, TypeError):
             continue
         _walk_json(payload, found, base_url, config)
     return found
 
 
-def _extract_from_inline_models(html: str, base_url: str, config: ExtractionConfig) -> list[Listing]:
+def _json_script_elements(page: Selector) -> list[Any]:
+    seen: set[str] = set()
+    out: list[Any] = []
+    for css_selector in _JSON_SCRIPT_SELECTORS:
+        for script in page.css(css_selector):
+            text = _clean(str(script.text or ""))
+            if text is not None and text not in seen:
+                seen.add(text)
+                out.append(script)
+    return out
+
+
+def _extract_from_inline_models(page: Selector, base_url: str, config: ExtractionConfig) -> list[Listing]:
     found: list[Listing] = []
     decoder = json.JSONDecoder()
-    for name in config.inline_model_names:
-        start = 0
-        marker = f"{name}:"
-        while True:
-            marker_index = html.find(marker, start)
-            if marker_index == -1:
-                break
-            json_start = marker_index + len(marker)
-            while json_start < len(html) and html[json_start].isspace():
-                json_start += 1
-            try:
-                payload, end = decoder.raw_decode(html[json_start:])
-            except json.JSONDecodeError:
-                start = json_start + 1
-                continue
-            _walk_json(payload, found, base_url, config)
-            start = json_start + end
+    for script in page.find_all("script", config.data_re):
+        text = str(script.text or "")
+        for name in config.inline_model_names:
+            start = 0
+            marker = f"{name}:"
+            while True:
+                marker_index = text.find(marker, start)
+                if marker_index == -1:
+                    break
+                json_start = marker_index + len(marker)
+                while json_start < len(text) and text[json_start].isspace():
+                    json_start += 1
+                try:
+                    payload, end = decoder.raw_decode(text[json_start:])
+                except json.JSONDecodeError:
+                    start = json_start + 1
+                    continue
+                _walk_json(payload, found, base_url, config)
+                start = json_start + end
     return found
 
 
@@ -151,36 +172,73 @@ def _listing_from_mapping(data: dict[str, Any], base_url: str, config: Extractio
     )
 
 
-def _extract_from_cards(html: str, base_url: str, config: ExtractionConfig) -> list[Listing]:
+def _extract_from_cards(page: Selector, base_url: str, config: ExtractionConfig) -> list[Listing]:
     out: list[Listing] = []
-    pattern = r'href=["\'](?P<href>[^"\']*(?:/expose/|/angebot/)[A-Za-z0-9_-]+[^"\']*)["\']'
-    for href_match in re.finditer(pattern, html):
-        start = max(0, href_match.start() - 2500)
-        end = min(len(html), href_match.end() + 2500)
-        chunk = html[start:end]
-        text = _strip_tags(chunk)
-        url = urljoin(base_url, unescape(href_match.group("href")))
+    for link in _listing_links(page, config):
+        href = _attr(link, "href")
+        if href is None:
+            continue
+        url = urljoin(base_url, href)
         if not _is_listing_url(url, base_url, config):
             continue
-        title = _guess_title(chunk)
+        card = _listing_container(link, config) or link
+        text = _selector_text(card)
+        address = _first_css_all_text(card, config.address_selectors)
         out.append(
             Listing(
                 id=_id_from_url(url, config),
-                title=title,
+                title=_heading_text(card) or _heading_text(link) or _selector_text(link),
                 url=url,
-                address=None,
-                price_eur=_number_from_regex(_PRICE_RE, text),
-                living_area_m2=_number_from_regex(_SIZE_RE, text),
-                rooms=_number_from_regex(_ROOMS_RE, text),
-                provider=None,
-                published=None,
+                address=address,
+                price_eur=_number_from_element(card, _PRICE_RE, text),
+                living_area_m2=_number_from_element(card, _SIZE_RE, text),
+                rooms=_number_from_element(card, _ROOMS_RE, text),
+                provider=_first_css_all_text(card, config.provider_selectors),
+                published=_first_css_all_text(card, config.published_selectors),
                 source=config.source,
                 source_color=config.source_color,
-                image_url=_image_from_html(chunk, base_url),
-                google_maps_url=None,
+                image_url=_image_from_element(card, base_url),
+                google_maps_url=_google_maps_url(address),
             )
         )
     return out
+
+
+def _listing_links(page: Selector, config: ExtractionConfig) -> list[Any]:
+    seen: set[str] = set()
+    links: list[Any] = []
+    for css_selector in config.listing_link_selectors:
+        for link in page.css(css_selector):
+            href = _attr(link, "href")
+            if href is not None and href not in seen:
+                seen.add(href)
+                links.append(link)
+    for link in [*page.find_all("a", {"href*": "/expose/"}), *page.find_all("a", {"href*": "/angebot/"})]:
+        href = _attr(link, "href")
+        if href is not None and href not in seen:
+            seen.add(href)
+            links.append(link)
+    return links
+
+
+def _listing_container(element: Any, config: ExtractionConfig) -> Any | None:
+    for ancestor in _ancestors(element):
+        if any(keyword in _attributes_text(ancestor) for keyword in config.card_container_keywords):
+            return ancestor
+    return element.find_ancestor(lambda ancestor: ancestor.tag in _LISTING_CONTAINERS)
+
+
+def _ancestors(element: Any) -> list[Any]:
+    ancestors: list[Any] = []
+    current = element.parent
+    while current is not None:
+        ancestors.append(current)
+        current = current.parent
+    return ancestors
+
+
+def _attributes_text(element: Any) -> str:
+    return " ".join(str(value) for value in element.attrib.values())
 
 
 def _provider_from_mapping(data: dict[str, Any], config: ExtractionConfig) -> str | None:
@@ -206,9 +264,9 @@ def _image_from_mapping(data: dict[str, Any], base_url: str, config: ExtractionC
     return None
 
 
-def _image_from_html(html: str, base_url: str) -> str | None:
-    match = re.search(r'<img[^>]+(?:src|data-src)=["\'](?P<src>[^"\']+)["\']', html, re.IGNORECASE)
-    return urljoin(base_url, unescape(match.group("src"))) if match is not None else None
+def _image_from_element(element: Any, base_url: str) -> str | None:
+    src = _css_text(element, "img::attr(src)") or _css_text(element, "img::attr(data-src)")
+    return urljoin(base_url, src) if src is not None else None
 
 
 def _address_from_mapping(data: dict[str, Any]) -> str | None:
@@ -276,21 +334,42 @@ def _first_number(data: dict[str, Any], *keys: str) -> float | None:
     return None
 
 
-def _guess_title(chunk: str) -> str | None:
-    match = re.search(r'<h[1-3][^>]*>(.*?)</h[1-3]>', chunk, re.IGNORECASE | re.DOTALL)
-    if match is None:
-        return None
-    return _strip_tags(match.group(1))
+def _heading_text(element: Any) -> str | None:
+    for selector in _HEADING_SELECTORS:
+        value = _css_text(element, selector)
+        if value is not None:
+            return value
+    return _first_css_all_text(element, ("h1", "h2", "h3"))
 
 
-def _strip_tags(value: str) -> str:
-    return _clean(re.sub(r"<[^>]+>", " ", unescape(value))) or ""
+def _selector_text(element: Any) -> str:
+    return _clean(str(element.get_all_text(ignore_tags=("script", "style")) or "")) or ""
+
+
+def _css_text(element: Any, selector: str) -> str | None:
+    value = element.css(selector).get()
+    return _clean(str(value)) if value is not None else None
+
+
+def _attr(element: Any, name: str) -> str | None:
+    value = element.attrib.get(name)
+    return _clean(str(value)) if value is not None else None
+
+
+def _first_css_all_text(element: Any, selectors: tuple[str, ...]) -> str | None:
+    for selector in selectors:
+        match = element.css(selector)
+        if match:
+            text = _clean(str(match[0].get_all_text(ignore_tags=("script", "style")) or ""))
+            if text is not None:
+                return text
+    return None
 
 
 def _clean(value: str | None) -> str | None:
     if value is None:
         return None
-    cleaned = _SPACE_RE.sub(" ", unescape(value)).strip()
+    cleaned = _SPACE_RE.sub(" ", value).strip()
     return cleaned or None
 
 
@@ -316,6 +395,15 @@ def _number_from_regex(pattern: re.Pattern[str], text: str) -> float | None:
     if match is None:
         return None
     return _to_float(match.group("value"))
+
+
+def _number_from_element(element: Any, pattern: re.Pattern[str], fallback_text: str) -> float | None:
+    match = element.find_by_regex(pattern)
+    if match is not None:
+        value = match.re_first(pattern)
+        if value is not None:
+            return _to_float(value)
+    return _number_from_regex(pattern, fallback_text)
 
 
 def _is_listing_url(url: str, base_url: str, config: ExtractionConfig) -> bool:
