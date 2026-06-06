@@ -319,14 +319,12 @@ def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
         *,
         headless: bool,
         real_chrome: bool,
-        solve_cloudflare: bool,
         concurrent_requests: int,
         concurrent_requests_per_domain: int,
     ):
         assert tuple(urls) == tuple(pages)
         assert headless is True
         assert real_chrome is False
-        assert solve_cloudflare is False
         assert concurrent_requests == 8
         assert concurrent_requests_per_domain == 2
         return [
@@ -368,7 +366,6 @@ def test_scrapes_criteria_groups_with_one_concurrent_fetch(monkeypatch) -> None:
         *,
         headless: bool,
         real_chrome: bool,
-        solve_cloudflare: bool,
         concurrent_requests: int,
         concurrent_requests_per_domain: int,
     ):
@@ -413,14 +410,12 @@ def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
             *,
             headless: bool,
             real_chrome: bool,
-            solve_cloudflare: bool,
             concurrent_requests: int,
             concurrent_requests_per_domain: int,
         ) -> None:
             assert urls == ("https://a.test", "https://b.test")
             assert headless is False
             assert real_chrome is True
-            assert solve_cloudflare is True
             assert concurrent_requests == 6
             assert concurrent_requests_per_domain == 3
             created.append(self)
@@ -439,7 +434,6 @@ def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
         ("https://a.test", "https://b.test"),
         headless=False,
         real_chrome=True,
-        solve_cloudflare=True,
         concurrent_requests=6,
         concurrent_requests_per_domain=3,
     )
@@ -464,22 +458,12 @@ def test_page_fetch_options_control_browser_options() -> None:
         page_options={"google_search": False, "solve_cloudflare": True},
         headless=True,
         real_chrome=False,
-        solve_cloudflare=False,
     )
 
     assert options["google_search"] is False
     assert options["solve_cloudflare"] is True
 
 
-def test_cli_cloudflare_flag_overrides_page_default() -> None:
-    options = scraper._browser_options(
-        page_options={"solve_cloudflare": False},
-        headless=True,
-        real_chrome=False,
-        solve_cloudflare=True,
-    )
-
-    assert options["solve_cloudflare"] is True
 
 
 def test_default_page_modules_define_fetch_options() -> None:

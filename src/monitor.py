@@ -28,8 +28,8 @@ class SearchCriteria:
     urls: tuple[str, ...]
     notifier: Notifier
 
-ScrapeListings = Callable[[Sequence[str], int, bool, bool, bool, int, int], list[Listing]]
-ScrapeListingGroups = Callable[[Sequence[tuple[str, ...]], int, bool, bool, bool, int, int], list[list[Listing]]]
+ScrapeListings = Callable[[Sequence[str], int, bool, bool, int, int], list[Listing]]
+ScrapeListingGroups = Callable[[Sequence[tuple[str, ...]], int, bool, bool, int, int], list[list[Listing]]]
 ActivityLog = Callable[[str], None]
 
 
@@ -46,7 +46,6 @@ class ListingMonitor:
         limit: int = 20,
         headless: bool = True,
         real_chrome: bool = False,
-        solve_cloudflare: bool = False,
         concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
         concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
         scraper: ScrapeListings | None = None,
@@ -64,7 +63,6 @@ class ListingMonitor:
         self.limit = limit
         self.headless = headless
         self.real_chrome = real_chrome
-        self.solve_cloudflare = solve_cloudflare
         self.concurrent_requests = concurrent_requests
         self.concurrent_requests_per_domain = concurrent_requests_per_domain
         self.scraper = scraper
@@ -123,7 +121,6 @@ class ListingMonitor:
                     self.limit,
                     self.headless,
                     self.real_chrome,
-                    self.solve_cloudflare,
                     self.concurrent_requests,
                     self.concurrent_requests_per_domain,
                 )
@@ -134,7 +131,6 @@ class ListingMonitor:
             self.limit,
             self.headless,
             self.real_chrome,
-            self.solve_cloudflare,
             self.concurrent_requests,
             self.concurrent_requests_per_domain,
         )
@@ -154,7 +150,6 @@ def _scrape_listing_pages(
     limit: int,
     headless: bool,
     real_chrome: bool,
-    solve_cloudflare: bool,
     concurrent_requests: int,
     concurrent_requests_per_domain: int,
 ) -> list[Listing]:
@@ -163,7 +158,6 @@ def _scrape_listing_pages(
         limit=limit,
         headless=headless,
         real_chrome=real_chrome,
-        solve_cloudflare=solve_cloudflare,
         concurrent_requests=concurrent_requests,
         concurrent_requests_per_domain=concurrent_requests_per_domain,
     )
@@ -174,7 +168,6 @@ def _scrape_listing_page_groups(
     limit: int,
     headless: bool,
     real_chrome: bool,
-    solve_cloudflare: bool,
     concurrent_requests: int,
     concurrent_requests_per_domain: int,
 ) -> list[list[Listing]]:
@@ -183,7 +176,6 @@ def _scrape_listing_page_groups(
         limit=limit,
         headless=headless,
         real_chrome=real_chrome,
-        solve_cloudflare=solve_cloudflare,
         concurrent_requests=concurrent_requests,
         concurrent_requests_per_domain=concurrent_requests_per_domain,
     )

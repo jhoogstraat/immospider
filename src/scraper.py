@@ -29,11 +29,10 @@ def scrape_latest_listings(
     limit: int = 20,
     headless: bool = True,
     real_chrome: bool = False,
-    solve_cloudflare: bool = False,
 ) -> list[Listing]:
     """Fetch one listing search page and return listings in page order."""
     source = source_for_url(url)
-    html = _fetch_html(url, headless=headless, real_chrome=real_chrome, solve_cloudflare=solve_cloudflare)
+    html = _fetch_html(url, headless=headless, real_chrome=real_chrome)
     listings = source.extract(html, url)
     return listings[:limit]
 
@@ -43,7 +42,6 @@ def scrape_listing_pages(
     limit: int = 20,
     headless: bool = True,
     real_chrome: bool = False,
-    solve_cloudflare: bool = False,
     concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
     concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
 ) -> list[Listing]:
@@ -52,7 +50,6 @@ def scrape_listing_pages(
         urls,
         headless=headless,
         real_chrome=real_chrome,
-        solve_cloudflare=solve_cloudflare,
         concurrent_requests=concurrent_requests,
         concurrent_requests_per_domain=concurrent_requests_per_domain,
     )
@@ -67,7 +64,6 @@ def scrape_listing_page_groups(
     limit: int = 20,
     headless: bool = True,
     real_chrome: bool = False,
-    solve_cloudflare: bool = False,
     concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
     concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
 ) -> list[list[Listing]]:
@@ -77,7 +73,6 @@ def scrape_listing_page_groups(
         flat_urls,
         headless=headless,
         real_chrome=real_chrome,
-        solve_cloudflare=solve_cloudflare,
         concurrent_requests=concurrent_requests,
         concurrent_requests_per_domain=concurrent_requests_per_domain,
     )
@@ -102,7 +97,6 @@ def _fetch_pages_concurrently(
     *,
     headless: bool,
     real_chrome: bool,
-    solve_cloudflare: bool,
     concurrent_requests: int,
     concurrent_requests_per_domain: int,
 ) -> list[_FetchedPage]:
@@ -112,7 +106,6 @@ def _fetch_pages_concurrently(
         tuple(urls),
         headless=headless,
         real_chrome=real_chrome,
-        solve_cloudflare=solve_cloudflare,
         concurrent_requests=concurrent_requests,
         concurrent_requests_per_domain=concurrent_requests_per_domain,
     )
@@ -140,14 +133,12 @@ class _ListingPagesSpider(Spider):
         *,
         headless: bool,
         real_chrome: bool,
-        solve_cloudflare: bool,
         concurrent_requests: int,
         concurrent_requests_per_domain: int,
     ) -> None:
         self.urls = urls
         self.headless = headless
         self.real_chrome = real_chrome
-        self.solve_cloudflare = solve_cloudflare
         self.concurrent_requests = concurrent_requests
         self.concurrent_requests_per_domain = concurrent_requests_per_domain
         super().__init__()
@@ -160,7 +151,6 @@ class _ListingPagesSpider(Spider):
                     page_options={},
                     headless=self.headless,
                     real_chrome=self.real_chrome,
-                    solve_cloudflare=self.solve_cloudflare,
                     max_pages=self.concurrent_requests,
                 )
             ),
@@ -178,7 +168,6 @@ class _ListingPagesSpider(Spider):
                     page_options=fetch_options_for_url(url),
                     headless=self.headless,
                     real_chrome=self.real_chrome,
-                    solve_cloudflare=self.solve_cloudflare,
                     max_pages=self.concurrent_requests,
                 ),
             )
@@ -199,7 +188,6 @@ def _browser_options(
     page_options: dict[str, object],
     headless: bool,
     real_chrome: bool,
-    solve_cloudflare: bool,
     max_pages: int = 1,
 ) -> dict[str, Any]:
     options: dict[str, Any] = {
@@ -218,25 +206,22 @@ def _browser_options(
         "max_pages": max_pages,
     }
     options.update(page_options)
-    if solve_cloudflare:
-        options["solve_cloudflare"] = True
     return options
 
 
-def _fetch_response(url: str, *, headless: bool, real_chrome: bool, solve_cloudflare: bool) -> Any:
+def _fetch_response(url: str, *, headless: bool, real_chrome: bool) -> Any:
     return StealthyFetcher.fetch(
         url,
         **_browser_options(
             page_options=fetch_options_for_url(url),
             headless=headless,
             real_chrome=real_chrome,
-            solve_cloudflare=solve_cloudflare,
         ),
     )
 
 
-def _fetch_html(url: str, *, headless: bool, real_chrome: bool, solve_cloudflare: bool) -> str:
-    response = _fetch_response(url, headless=headless, real_chrome=real_chrome, solve_cloudflare=solve_cloudflare)
+def _fetch_html(url: str, *, headless: bool, real_chrome: bool) -> str:
+    response = _fetch_response(url, headless=headless, real_chrome=real_chrome)
     return response.body.decode(response.encoding or "utf-8", errors="replace")
 
 

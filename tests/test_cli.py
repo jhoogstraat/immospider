@@ -75,3 +75,4 @@ def test_cli_builds_named_criteria_with_separate_notification_urls(monkeypatch, 
         ("https://www.immobilienscout24.de/cologne",),
     ]
     assert [criterion.notifier.urls for criterion in criteria] == [("discord://duesseldorf",), ("discord://cologne",)]
+    assert "solve_cloudflare" not in monitor
