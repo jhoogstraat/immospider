@@ -125,7 +125,3 @@ class ListingMonitor:
     def _log(self, message: str) -> None:
         if self.activity_log is not None:
             self.activity_log(message)
-
-
-
-
