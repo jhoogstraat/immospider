@@ -2,7 +2,7 @@ from __future__ import annotations
 import logging
 from dataclasses import asdict, dataclass
 from typing import Any
-from scrapling.fetchers import AsyncStealthySession, StealthyFetcher
+from scrapling.fetchers import AsyncStealthySession
 from models import Listing
 from pages import fetch_options_for_url
 from sources import source_for_url
@@ -31,10 +31,16 @@ def scrape_latest_listings(
     real_chrome: bool = False,
 ) -> list[Listing]:
     """Fetch one listing search page and return listings in page order."""
-    source = source_for_url(url)
-    html = _fetch_html(url, headless=headless, real_chrome=real_chrome)
-    listings = source.extract(html, url)
-    return listings[:limit]
+    pages = _fetch_pages_concurrently(
+        (url,),
+        headless=headless,
+        real_chrome=real_chrome,
+        concurrent_requests=1,
+        concurrent_requests_per_domain=1,
+    )
+    page = pages[0]
+    source = source_for_url(page.requested_url)
+    return source.extract(page.html, page.requested_url)[:limit]
 
 
 def scrape_listing_pages(
@@ -209,20 +215,6 @@ def _browser_options(
     return options
 
 
-def _fetch_response(url: str, *, headless: bool, real_chrome: bool) -> Any:
-    return StealthyFetcher.fetch(
-        url,
-        **_browser_options(
-            page_options=fetch_options_for_url(url),
-            headless=headless,
-            real_chrome=real_chrome,
-        ),
-    )
-
-
-def _fetch_html(url: str, *, headless: bool, real_chrome: bool) -> str:
-    response = _fetch_response(url, headless=headless, real_chrome=real_chrome)
-    return response.body.decode(response.encoding or "utf-8", errors="replace")
 
 
 def listing_dicts(listings: list[Listing]) -> list[dict[str, Any]]:
