@@ -1,13 +1,16 @@
 from __future__ import annotations
 import logging
 from dataclasses import dataclass
-from typing import Any
+from collections.abc import AsyncGenerator
+from typing import TypedDict, cast, override
+
 from scrapling.fetchers import AsyncStealthySession
 from models import Listing
 from pages import fetch_options_for_url
 from sources import source_for_url
 from sources.common import dedupe
 from scrapling.spiders import Request, Response, Spider
+from scrapling.spiders.session import SessionManager
 
 DEFAULT_CONCURRENT_REQUESTS = 4
 DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN = 1
@@ -17,11 +20,13 @@ BROWSER_TIMEOUT_MS = 45000
 
 
 @dataclass(frozen=True, slots=True)
-class _FetchedPage:
+class _FetchedListings:
     position: int
-    requested_url: str
-    final_url: str
-    html: str
+    listings: list[Listing]
+
+class _SpiderItem(TypedDict):
+    position: int
+    listings: list[Listing]
 
 
 
@@ -33,24 +38,22 @@ def scrape_listing_page_groups(
     concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
     concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
 ) -> list[list[Listing]]:
-    """Fetch all criteria URLs in one Scrapling spider crawl, then split listings back by criteria."""
+    """Fetch and extract all criteria URLs in one Scrapling spider crawl, then split listings by criteria."""
     flat_urls = [url for urls in url_groups for url in urls]
-    pages = _fetch_pages_concurrently(
+    fetched_pages = _fetch_listings_concurrently(
         flat_urls,
+        limit=limit,
         headless=headless,
         real_chrome=real_chrome,
         concurrent_requests=concurrent_requests,
         concurrent_requests_per_domain=concurrent_requests_per_domain,
     )
-    pages_by_position = {page.position: page for page in pages}
     groups: list[list[Listing]] = []
     position = 0
     for urls in url_groups:
         listings: list[Listing] = []
-        for url in urls:
-            page = pages_by_position[position]
-            source = source_for_url(url)
-            listings.extend(source.extract(page.html, url)[:limit])
+        for _ in urls:
+            listings.extend(fetched_pages[position].listings)
             position += 1
         groups.append(dedupe(listings)[:limit])
     return groups
@@ -58,71 +61,84 @@ def scrape_listing_page_groups(
 
 
 
-def _fetch_pages_concurrently(
+def _fetch_listings_concurrently(
     urls: tuple[str, ...] | list[str],
     *,
+    limit: int,
     headless: bool,
     real_chrome: bool,
     concurrent_requests: int,
     concurrent_requests_per_domain: int,
-) -> list[_FetchedPage]:
+) -> list[_FetchedListings]:
     if not urls:
         return []
     spider = _ListingPagesSpider(
         tuple(urls),
+        limit=limit,
         headless=headless,
         real_chrome=real_chrome,
         concurrent_requests=concurrent_requests,
         concurrent_requests_per_domain=concurrent_requests_per_domain,
     )
     result = spider.start()
-    pages = [
-        _FetchedPage(
+    spider_items = cast(list[_SpiderItem], result.items)
+    fetched_pages = [
+        _FetchedListings(
             position=item["position"],
-            requested_url=item["requested_url"],
-            final_url=item["final_url"],
-            html=item["html"],
+            listings=item["listings"],
         )
-        for item in result.items
+        for item in spider_items
     ]
-    pages.sort(key=lambda page: page.position)
-    return pages
+    fetched_pages.sort(key=lambda page: page.position)
+    return fetched_pages
 
 
 class _ListingPagesSpider(Spider):
-    name = "listing_pages"
-    logging_level = logging.WARNING
+    name: str | None = "listing_pages"
+    logging_level: int = logging.WARNING
 
     def __init__(
         self,
         urls: tuple[str, ...],
+        limit: int,
         *,
         headless: bool,
         real_chrome: bool,
         concurrent_requests: int,
         concurrent_requests_per_domain: int,
     ) -> None:
-        self.urls = urls
-        self.headless = headless
-        self.real_chrome = real_chrome
-        self.concurrent_requests = concurrent_requests
-        self.concurrent_requests_per_domain = concurrent_requests_per_domain
+        self.urls: tuple[str, ...] = urls
+        self.limit: int = limit
+        self.headless: bool = headless
+        self.real_chrome: bool = real_chrome
+        self.concurrent_requests: int = concurrent_requests
+        self.concurrent_requests_per_domain: int = concurrent_requests_per_domain
         super().__init__()
 
-    def configure_sessions(self, manager) -> None:
-        manager.add(
+    @override
+    def configure_sessions(self, manager: SessionManager) -> None:
+        _ = manager.add(
             "stealth",
             AsyncStealthySession(
-                **_browser_options(
-                    headless=self.headless,
-                    real_chrome=self.real_chrome,
-                    max_pages=self.concurrent_requests,
-                )
+                headless=self.headless,
+                real_chrome=self.real_chrome,
+                block_webrtc=True,
+                hide_canvas=True,
+                locale="de-DE",
+                timezone_id="Europe/Berlin",
+                network_idle=False,
+                wait=BROWSER_SETTLE_MS,
+                timeout=BROWSER_TIMEOUT_MS,
+                disable_resources=True,
+                solve_cloudflare=False,
+                block_ads=True,
+                max_pages=self.concurrent_requests,
             ),
             default=True,
         )
 
-    async def start_requests(self):
+    @override
+    async def start_requests(self) -> AsyncGenerator[Request, None]:
         for position, url in enumerate(self.urls):
             yield Request(
                 url,
@@ -132,43 +148,19 @@ class _ListingPagesSpider(Spider):
                 **fetch_options_for_url(url),
             )
 
-    async def parse(self, response: Response):
+    @override
+    async def parse(self, response: Response) -> AsyncGenerator[dict[str, object] | Request | None, None]:
+        requested_url = cast(str, response.meta["requested_url"])
+        position = cast(int, response.meta["position"])
+        html = response.body.decode(response.encoding or "utf-8", errors="replace")
         yield {
-            "position": response.meta["position"],
-            "requested_url": response.meta["requested_url"],
-            "final_url": response.url,
-            "html": response.body.decode(response.encoding or "utf-8", errors="replace"),
+            "position": position,
+            "listings": source_for_url(requested_url).extract(html, requested_url)[: self.limit],
         }
 
 
 
 
-def _browser_options(
-    *,
-    headless: bool,
-    real_chrome: bool,
-    max_pages: int,
-) -> dict[str, Any]:
-    options: dict[str, Any] = {
-        "headless": headless,
-        "real_chrome": real_chrome,
-        "block_webrtc": True,
-        "hide_canvas": True,
-        "locale": "de-DE",
-        "timezone_id": "Europe/Berlin",
-        "network_idle": False,
-        "wait": BROWSER_SETTLE_MS,
-        "timeout": BROWSER_TIMEOUT_MS,
-        "disable_resources": True,
-        "solve_cloudflare": False,
-        "block_ads": True,
-        "max_pages": max_pages,
-    }
-    return options
 
 
 
-
-def extract_listings(html: str, base_url: str) -> list[Listing]:
-    """Extract listings with the extractor registered for ``base_url``."""
-    return source_for_url(base_url).extract(html, base_url)

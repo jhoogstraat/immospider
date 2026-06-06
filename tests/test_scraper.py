@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import scraper
 from pages import fetch_options_for_url
 from sources import immobilienscout24, immowelt, kleinanzeigen, source_for_url
-from scraper import extract_listings, scrape_listing_page_groups
+from scraper import scrape_listing_page_groups
 
 
 def test_extracts_listing_from_embedded_json() -> None:
@@ -66,7 +66,9 @@ def test_extracts_listing_from_inline_result_list_model() -> None:
     </script>
     """
 
-    listings = extract_listings(html, "https://www.immobilienscout24.de/search")
+    listings = source_for_url("https://www.immobilienscout24.de/search").extract(
+        html, "https://www.immobilienscout24.de/search"
+    )
 
     assert len(listings) == 1
     listing = listings[0]
@@ -92,7 +94,9 @@ def test_deduplicates_json_listings_by_id() -> None:
     </script>
     """
 
-    listings = extract_listings(html, "https://www.immobilienscout24.de/search")
+    listings = source_for_url("https://www.immobilienscout24.de/search").extract(
+        html, "https://www.immobilienscout24.de/search"
+    )
 
     assert [listing.id for listing in listings] == ["1", "2"]
     assert [listing.title for listing in listings] == ["First", "Second"]
@@ -108,7 +112,9 @@ def test_falls_back_to_visible_listing_card() -> None:
     </article>
     """
 
-    listings = extract_listings(html, "https://www.immobilienscout24.de/search")
+    listings = source_for_url("https://www.immobilienscout24.de/search").extract(
+        html, "https://www.immobilienscout24.de/search"
+    )
 
     assert len(listings) == 1
     listing = listings[0]
@@ -316,25 +322,30 @@ def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
         """,
     }
 
-    def fake_fetch_pages(
+    def fake_fetch_listings(
         urls,
         *,
+        limit: int,
         headless: bool,
         real_chrome: bool,
         concurrent_requests: int,
         concurrent_requests_per_domain: int,
     ):
         assert tuple(urls) == tuple(pages)
+        assert limit == 10
         assert headless is True
         assert real_chrome is False
         assert concurrent_requests == 8
         assert concurrent_requests_per_domain == 2
         return [
-            scraper._FetchedPage(position=position, requested_url=url, final_url=url, html=pages[url])
+            scraper._FetchedListings(
+                position=position,
+                listings=source_for_url(url).extract(pages[url], url)[:limit],
+            )
             for position, url in enumerate(urls)
         ]
 
-    monkeypatch.setattr(scraper, "_fetch_pages_concurrently", fake_fetch_pages)
+    monkeypatch.setattr(scraper, "_fetch_listings_concurrently", fake_fetch_listings)
 
     grouped = scrape_listing_page_groups([tuple(pages)], limit=10, concurrent_requests=8, concurrent_requests_per_domain=2)
     listings = grouped[0]
@@ -364,9 +375,10 @@ def test_scrapes_criteria_groups_with_one_concurrent_fetch(monkeypatch) -> None:
     }
     requested_batches = []
 
-    def fake_fetch_pages(
+    def fake_fetch_listings(
         urls,
         *,
+        limit: int,
         headless: bool,
         real_chrome: bool,
         concurrent_requests: int,
@@ -374,11 +386,14 @@ def test_scrapes_criteria_groups_with_one_concurrent_fetch(monkeypatch) -> None:
     ):
         requested_batches.append(tuple(urls))
         return [
-            scraper._FetchedPage(position=position, requested_url=url, final_url=url, html=pages[url])
+            scraper._FetchedListings(
+                position=position,
+                listings=source_for_url(url).extract(pages[url], url)[:limit],
+            )
             for position, url in enumerate(urls)
         ]
 
-    monkeypatch.setattr(scraper, "_fetch_pages_concurrently", fake_fetch_pages)
+    monkeypatch.setattr(scraper, "_fetch_listings_concurrently", fake_fetch_listings)
 
     grouped = scrape_listing_page_groups(
         [
@@ -403,13 +418,14 @@ def test_scrapes_criteria_groups_with_one_concurrent_fetch(monkeypatch) -> None:
 
 
 
-def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
+def test_fetch_listings_preserves_configured_page_order(monkeypatch) -> None:
     created: list[object] = []
 
     class FakeSpider:
         def __init__(
             self,
             urls,
+            limit,
             *,
             headless: bool,
             real_chrome: bool,
@@ -417,6 +433,7 @@ def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
             concurrent_requests_per_domain: int,
         ) -> None:
             assert urls == ("https://a.test", "https://b.test")
+            assert limit == 10
             assert headless is False
             assert real_chrome is True
             assert concurrent_requests == 6
@@ -426,22 +443,23 @@ def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
         def start(self):
             return SimpleNamespace(
                 items=[
-                    {"position": 1, "requested_url": "https://b.test", "final_url": "https://b.test", "html": "b"},
-                    {"position": 0, "requested_url": "https://a.test", "final_url": "https://a.test", "html": "a"},
+                    {"position": 1, "listings": [SimpleNamespace(id="b")]},
+                    {"position": 0, "listings": [SimpleNamespace(id="a")]},
                 ]
             )
 
     monkeypatch.setattr(scraper, "_ListingPagesSpider", FakeSpider)
 
-    pages = scraper._fetch_pages_concurrently(
+    pages = scraper._fetch_listings_concurrently(
         ("https://a.test", "https://b.test"),
+        limit=10,
         headless=False,
         real_chrome=True,
         concurrent_requests=6,
         concurrent_requests_per_domain=3,
     )
 
-    assert [page.requested_url for page in pages] == ["https://a.test", "https://b.test"]
+    assert [page.listings[0].id for page in pages] == ["a", "b"]
     assert len(created) == 1
 
 
@@ -456,12 +474,6 @@ def test_source_registry_supports_kleinanzeigen_urls() -> None:
     assert source.host == "www.kleinanzeigen.de"
 
 
-def test_browser_options_configure_session_only() -> None:
-    options = scraper._browser_options(headless=True, real_chrome=False, max_pages=4)
-
-    assert options["headless"] is True
-    assert options["real_chrome"] is False
-    assert options["max_pages"] == 4
 
 
 
