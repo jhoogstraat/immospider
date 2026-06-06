@@ -44,6 +44,8 @@ def test_cli_builds_named_criteria_with_separate_notification_urls(monkeypatch, 
             "duesseldorf=https://www.immobilienscout24.de/duesseldorf",
             "--criteria",
             "duesseldorf=https://www.immowelt.de/duesseldorf",
+            "--criteria",
+            "duesseldorf=https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf",
             "--criteria-notify-url",
             "duesseldorf=discord://duesseldorf",
             "--criteria",
@@ -59,12 +61,17 @@ def test_cli_builds_named_criteria_with_separate_notification_urls(monkeypatch, 
     assert monitor["urls"] == (
         "https://www.immobilienscout24.de/duesseldorf",
         "https://www.immowelt.de/duesseldorf",
+        "https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf",
         "https://www.immobilienscout24.de/cologne",
     )
     criteria = monitor["criteria"]
     assert [criterion.name for criterion in criteria] == ["duesseldorf", "cologne"]
     assert [criterion.urls for criterion in criteria] == [
-        ("https://www.immobilienscout24.de/duesseldorf", "https://www.immowelt.de/duesseldorf"),
+        (
+            "https://www.immobilienscout24.de/duesseldorf",
+            "https://www.immowelt.de/duesseldorf",
+            "https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf",
+        ),
         ("https://www.immobilienscout24.de/cologne",),
     ]
     assert [criterion.notifier.urls for criterion in criteria] == [("discord://duesseldorf",), ("discord://cologne",)]

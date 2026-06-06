@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import scraper
 from pages import fetch_options_for_url
-from sources import immobilienscout24, immowelt
+from sources import immobilienscout24, immowelt, kleinanzeigen, source_for_url
 from scraper import extract_listings, scrape_listing_page_groups, scrape_listing_pages
 
 
@@ -165,6 +165,72 @@ def test_extracts_immowelt_listing_from_embedded_json() -> None:
     assert listing.google_maps_url == "https://www.google.com/maps/search/?api=1&query=40213%2C+D%C3%BCsseldorf"
 
 
+def test_extracts_kleinanzeigen_listing_from_visible_card() -> None:
+    html = """
+    <li class="ad-listitem fully-clickable-card">
+      <article class="aditem" data-adid="3425718263"
+               data-href="/s-anzeige/moebilierte-2-zimmer-wohnung-in-pempelfort-zur-untermiete/3425718263-203-2082">
+        <div class="aditem-image">
+          <a href="/s-anzeige/moebilierte-2-zimmer-wohnung-in-pempelfort-zur-untermiete/3425718263-203-2082">
+            <img src="https://img.kleinanzeigen.de/api/v1/prod-ads/images/00/example?rule=$_2.AUTO"
+                 alt="Möbilierte 2 Zimmer Wohnung in Pempelfort zur Untermiete Düsseldorf - Pempelfort Vorschau" />
+          </a>
+        </div>
+        <div class="aditem-main">
+          <div class="aditem-main--top">
+            <div class="aditem-main--top--left">
+              <i class="icon icon-small icon-pin-gray" aria-hidden="true"></i> 40477 Pempelfort
+            </div>
+            <div class="aditem-main--top--right">
+              <i class="icon icon-small icon-calendar-open" aria-hidden="true"></i> Heute, 08:42
+            </div>
+          </div>
+          <div class="aditem-main--middle">
+            <h2 class="text-module-begin">
+              <a class="ellipsis"
+                 href="/s-anzeige/moebilierte-2-zimmer-wohnung-in-pempelfort-zur-untermiete/3425718263-203-2082">Möbilierte 2 Zimmer Wohnung in Pempelfort zur Untermiete</a>
+            </h2>
+            <p class="aditem-main--middle--tags">65 m² &#183; 2 Zi.</p>
+            <div class="aditem-main--middle--price-shipping">
+              <p class="aditem-main--middle--price-shipping--price">1.800 €</p>
+            </div>
+          </div>
+          <div class="aditem-main--bottom">
+            <p class="text-module-end"><span class="simpletag">Von Privat</span></p>
+          </div>
+        </div>
+      </article>
+    </li>
+    """
+
+    listings = kleinanzeigen.extract_listings(
+        html,
+        base_url=(
+            "https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf/"
+            "sortierung:neuste/anzeige:angebote/c203l2068+wohnung_mieten.swap_s:nein"
+        ),
+    )
+
+    assert len(listings) == 1
+    listing = listings[0]
+    assert listing.id == "3425718263"
+    assert listing.url == (
+        "https://www.kleinanzeigen.de/s-anzeige/"
+        "moebilierte-2-zimmer-wohnung-in-pempelfort-zur-untermiete/3425718263-203-2082"
+    )
+    assert listing.title == "Möbilierte 2 Zimmer Wohnung in Pempelfort zur Untermiete"
+    assert listing.address == "40477 Pempelfort"
+    assert listing.price_eur == 1800.0
+    assert listing.living_area_m2 == 65.0
+    assert listing.rooms == 2.0
+    assert listing.provider == "Von Privat"
+    assert listing.published == "Heute, 08:42"
+    assert listing.source == "Kleinanzeigen"
+    assert listing.source_color == 0x86B817
+    assert listing.image_url == "https://img.kleinanzeigen.de/api/v1/prod-ads/images/00/example?rule=$_2.AUTO"
+    assert listing.google_maps_url == "https://www.google.com/maps/search/?api=1&query=40477+Pempelfort"
+
+
 def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
     pages = {
         "https://www.immobilienscout24.de/search": """
@@ -176,6 +242,12 @@ def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
             <script type="application/json">
             {"classifieds":[{"classifiedId":"2", "url":"/expose/2", "headline":"Welt"}]}
             </script>
+        """,
+        "https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf": """
+            <article class="aditem" data-adid="3"
+                     data-href="/s-anzeige/klein/3-203-2068">
+              <h2><a href="/s-anzeige/klein/3-203-2068">Klein</a></h2>
+            </article>
         """,
     }
 
@@ -206,6 +278,7 @@ def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
     assert [listing.url for listing in listings] == [
         "https://www.immobilienscout24.de/expose/1",
         "https://www.immowelt.de/expose/2",
+        "https://www.kleinanzeigen.de/s-anzeige/klein/3-203-2068",
     ]
 def test_scrapes_criteria_groups_with_one_concurrent_fetch(monkeypatch) -> None:
     pages = {
@@ -313,6 +386,16 @@ def test_fetch_pages_preserves_configured_page_order(monkeypatch) -> None:
 
 
 
+def test_source_registry_supports_kleinanzeigen_urls() -> None:
+    source = source_for_url(
+        "https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf/"
+        "sortierung:neuste/anzeige:angebote/c203l2068+wohnung_mieten.swap_s:nein"
+    )
+
+    assert source.name == "Kleinanzeigen"
+    assert source.host == "www.kleinanzeigen.de"
+
+
 def test_page_fetch_options_control_browser_options() -> None:
     options = scraper._browser_options(
         page_options={"google_search": False, "solve_cloudflare": True},
@@ -341,3 +424,5 @@ def test_default_page_modules_define_fetch_options() -> None:
     assert fetch_options_for_url("https://www.immobilienscout24.de/search")["solve_cloudflare"] is False
     assert fetch_options_for_url("https://www.immowelt.de/classified-search?order=DateDesc")["google_search"] is False
     assert fetch_options_for_url("https://www.immowelt.de/classified-search?order=DateDesc")["solve_cloudflare"] is False
+    assert fetch_options_for_url("https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf")["google_search"] is False
+    assert fetch_options_for_url("https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf")["solve_cloudflare"] is False

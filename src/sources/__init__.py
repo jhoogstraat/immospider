@@ -4,9 +4,9 @@ from urllib.parse import urlparse
 
 from models import ListingSource
 
-from . import immobilienscout24, immowelt
+from . import immobilienscout24, immowelt, kleinanzeigen
 
-DEFAULT_SOURCES = (immobilienscout24.SOURCE, immowelt.SOURCE)
+DEFAULT_SOURCES = (immobilienscout24.SOURCE, immowelt.SOURCE, kleinanzeigen.SOURCE)
 
 
 def source_for_url(url: str, sources: tuple[ListingSource, ...] = DEFAULT_SOURCES) -> ListingSource:
