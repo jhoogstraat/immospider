@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 from dataclasses import dataclass
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from typing import TypedDict, cast, override
 
 from scrapling.fetchers import AsyncStealthySession
@@ -31,7 +31,7 @@ class _SpiderItem(TypedDict):
 
 
 def scrape_listing_page_groups(
-    url_groups: tuple[tuple[str, ...], ...] | list[tuple[str, ...]],
+    url_groups: Sequence[tuple[str, ...]],
     limit: int = 20,
     headless: bool = True,
     real_chrome: bool = False,

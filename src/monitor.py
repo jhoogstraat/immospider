@@ -45,21 +45,23 @@ class ListingMonitor:
         group_scraper: ScrapeListingGroups | None = None,
         activity_log: ActivityLog | None = None,
     ) -> None:
-        self.criteria = tuple(criteria) if criteria is not None else (SearchCriteria("default", tuple(urls or ()), notifier),)
+        self.criteria: tuple[SearchCriteria, ...] = (
+            tuple(criteria) if criteria is not None else (SearchCriteria("default", tuple(urls or ()), notifier),)
+        )
         if not self.criteria:
             raise ValueError("at least one search criteria is required")
         if any(not criterion.urls for criterion in self.criteria):
             raise ValueError("each search criteria requires at least one URL")
-        self.urls = tuple(url for criterion in self.criteria for url in criterion.urls)
-        self.cache = cache
-        self.notifier = notifier
-        self.limit = limit
-        self.headless = headless
-        self.real_chrome = real_chrome
-        self.concurrent_requests = concurrent_requests
-        self.concurrent_requests_per_domain = concurrent_requests_per_domain
-        self.group_scraper = group_scraper or _scrape_listing_page_groups
-        self.activity_log = activity_log
+        self.urls: tuple[str, ...] = tuple(url for criterion in self.criteria for url in criterion.urls)
+        self.cache: SeenListingCache = cache
+        self.notifier: Notifier = notifier
+        self.limit: int = limit
+        self.headless: bool = headless
+        self.real_chrome: bool = real_chrome
+        self.concurrent_requests: int = concurrent_requests
+        self.concurrent_requests_per_domain: int = concurrent_requests_per_domain
+        self.group_scraper: ScrapeListingGroups = group_scraper or scrape_listing_page_groups
+        self.activity_log: ActivityLog | None = activity_log
 
     def warm_cache(self) -> ScanResult:
         self._log(f"warming cache: fetching {len(self.urls)} page(s)")
@@ -97,12 +99,12 @@ class ListingMonitor:
         max_scans: int | None = None,
         sleep: Callable[[float], object] = time.sleep,
     ) -> None:
-        self.warm_cache()
+        _ = self.warm_cache()
         scans = 0
         while max_scans is None or scans < max_scans:
             if sleep(interval_seconds):
                 break
-            self.scan_once()
+            _ = self.scan_once()
             scans += 1
 
     def _fetch_by_criterion(self) -> list[list[Listing]]:
@@ -127,19 +129,3 @@ class ListingMonitor:
 
 
 
-def _scrape_listing_page_groups(
-    url_groups: Sequence[tuple[str, ...]],
-    limit: int,
-    headless: bool,
-    real_chrome: bool,
-    concurrent_requests: int,
-    concurrent_requests_per_domain: int,
-) -> list[list[Listing]]:
-    return scrape_listing_page_groups(
-        list(url_groups),
-        limit=limit,
-        headless=headless,
-        real_chrome=real_chrome,
-        concurrent_requests=concurrent_requests,
-        concurrent_requests_per_domain=concurrent_requests_per_domain,
-    )
