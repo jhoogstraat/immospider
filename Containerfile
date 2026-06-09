@@ -15,19 +15,25 @@ ENV UV_PYTHON_DOWNLOADS=0 \
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock ./
-COPY src ./src
-
-RUN uv sync --locked --no-dev --no-editable \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tini \
     && groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --home-dir /home/app --create-home --shell /usr/sbin/nologin app \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tini \
-    && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /data /ms-playwright \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml uv.lock ./
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-editable --no-install-project \
     && uv run --locked --no-sync python -m patchright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/* /tmp/* \
     && chown -R app:app /home/app /data /ms-playwright
+
+COPY src ./src
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-editable
 
 WORKDIR /data
 USER app
