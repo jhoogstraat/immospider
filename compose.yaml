@@ -1,0 +1,23 @@
+services:
+  immospider:
+    image: ghcr.io/jhoogstraat/immospider:main
+    container_name: immospider
+    restart: unless-stopped
+    volumes:
+      - immospider-data:/data
+    command:
+      - --criteria
+      - duesseldorf=https://www.immobilienscout24.de/Suche/de/nordrhein-westfalen/duesseldorf/wohnung-mieten
+      - --criteria
+      - duesseldorf=https://www.immowelt.de/liste/duesseldorf/wohnungen/mieten?sort=relevanz
+      - --criteria
+      - duesseldorf=https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf/c203l2068
+      - --notify-url
+      - ${DISCORD_APPRISE_URL:?Set DISCORD_APPRISE_URL, e.g. discord://WEBHOOK_ID/WEBHOOK_TOKEN}
+      - --interval
+      - "300"
+      - --limit
+      - "20"
+
+volumes:
+  immospider-data:
