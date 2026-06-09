@@ -22,6 +22,7 @@ CONFIG = ExtractionConfig(
     provider_keys=("companyName", "realtorCompanyName", "provider", "contactName"),
     published_keys=("publishDate", "creationDate", "modifiedDate", "published", "datePublished"),
     image_keys=("image", "imageUrl", "picture", "pictureUrl", "titlePicture"),
+    utility_keys=("utilities", "serviceCharge", "additionalCosts", "operatingCosts", "heatingCosts"),
     nested_listing_key="resultlist.realEstate",
     listing_link_selectors=(
         '[data-testid*="result-list-entry"] a[href*="/expose/"]',

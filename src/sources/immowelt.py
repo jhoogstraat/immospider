@@ -22,6 +22,7 @@ CONFIG = ExtractionConfig(
     provider_keys=("companyName", "provider", "contactName", "providerName", "seller", "brandName"),
     published_keys=("publishDate", "creationDate", "modifiedDate", "published", "datePublished"),
     image_keys=("image", "imageUrl", "picture", "pictureUrl", "thumbnailUrl", "coverImage"),
+    utility_keys=("utilities", "serviceCharge", "additionalCosts", "operatingCosts", "ancillaryCosts", "heatingCosts"),
     listing_link_selectors=(
         '[data-test*="estate-card"] a[href*="/expose/"]',
         '[data-testid*="estate-card"] a[href*="/expose/"]',

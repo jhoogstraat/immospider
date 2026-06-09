@@ -11,6 +11,8 @@ class Listing:
     url: str
     address: str | None
     price_eur: float | None
+    price_label: str | None
+    utilities_eur: float | None
     living_area_m2: float | None
     rooms: float | None
     provider: str | None

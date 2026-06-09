@@ -12,6 +12,7 @@ from models import Listing
 
 _SPACE_RE = re.compile(r"\s+")
 _PRICE_RE = re.compile(r"(?P<value>[\d.]+(?:,\d+)?)\s*€")
+_UTILITY_RE = re.compile(r"(?:Nebenkosten|Betriebskosten|Utilities)\D{0,40}(?P<value>[\d.]+(?:,\d+)?)\s*€", re.IGNORECASE)
 _SIZE_RE = re.compile(r"(?P<value>[\d.]+(?:,\d+)?)\s*m²")
 _ROOMS_RE = re.compile(r"(?P<value>\d+(?:,\d+)?)\s*(?:Zi|Zimmer)", re.IGNORECASE)
 _JSON_SCRIPT_SELECTORS = ('script[type="application/json"]', 'script[type="application/ld+json"]', 'script#__NEXT_DATA__')
@@ -37,6 +38,7 @@ class ExtractionConfig:
     provider_keys: tuple[str, ...]
     published_keys: tuple[str, ...]
     image_keys: tuple[str, ...]
+    utility_keys: tuple[str, ...] = ()
     nested_listing_key: str | None = None
     listing_link_selectors: tuple[str, ...] = _LISTING_LINK_SELECTORS
     card_container_keywords: tuple[str, ...] = ()
@@ -155,12 +157,15 @@ def _listing_from_mapping(data: dict[str, Any], base_url: str, config: Extractio
 
     address = _address_from_mapping(source)
     image_url = _image_from_mapping(source, base_url, config)
+    price_eur, price_label = _price_from_mapping(source, config.price_keys)
     return Listing(
         id=listing_id or _id_from_url(absolute_url, config),
         title=_clean(_first_str(source, *config.title_keys)),
         url=absolute_url,
         address=_clean(address),
-        price_eur=_first_number(source, *config.price_keys),
+        price_eur=price_eur,
+        price_label=price_label,
+        utilities_eur=_first_number(source, *config.utility_keys),
         living_area_m2=_first_number(source, *config.area_keys),
         rooms=_first_number(source, *config.rooms_keys),
         provider=_provider_from_mapping(source, config),
@@ -184,13 +189,16 @@ def _extract_from_cards(page: Selector, base_url: str, config: ExtractionConfig)
         card = _listing_container(link, config) or link
         text = _selector_text(card)
         address = _first_css_all_text(card, config.address_selectors)
+        price_eur = _number_from_element(card, _PRICE_RE, text)
         out.append(
             Listing(
                 id=_id_from_url(url, config),
                 title=_heading_text(card) or _heading_text(link) or _selector_text(link),
                 url=url,
                 address=address,
-                price_eur=_number_from_element(card, _PRICE_RE, text),
+                price_eur=price_eur,
+                price_label=_price_label_from_text(text),
+                utilities_eur=_number_from_regex(_UTILITY_RE, text),
                 living_area_m2=_number_from_element(card, _SIZE_RE, text),
                 rooms=_number_from_element(card, _ROOMS_RE, text),
                 provider=_first_css_all_text(card, config.provider_selectors),
@@ -296,9 +304,10 @@ def _listing_score(listing: Listing) -> int:
     return sum(
         value is not None
         for value in (
-            listing.title,
             listing.address,
             listing.price_eur,
+            listing.price_label,
+            listing.utilities_eur,
             listing.living_area_m2,
             listing.rooms,
             listing.provider,
@@ -331,6 +340,36 @@ def _first_number(data: dict[str, Any], *keys: str) -> float | None:
             number = _first_number(value, "value", "amount")
             if number is not None:
                 return number
+    return None
+
+def _price_from_mapping(data: dict[str, Any], keys: tuple[str, ...]) -> tuple[float | None, str | None]:
+    for key in keys:
+        value = data.get(key)
+        number = _to_float(value)
+        if number is not None:
+            return number, _price_label_from_key(key)
+        if isinstance(value, dict):
+            number = _first_number(value, "value", "amount")
+            if number is not None:
+                return number, _price_label_from_key(key)
+    return None, None
+
+
+def _price_label_from_key(key: str) -> str | None:
+    normalized = key.lower()
+    if any(part in normalized for part in ("warm", "total", "gross")):
+        return "warm"
+    if any(part in normalized for part in ("cold", "base", "net", "kalt")):
+        return "cold"
+    return None
+
+
+def _price_label_from_text(text: str) -> str | None:
+    normalized = text.casefold()
+    if "warmmiete" in normalized or "warm rent" in normalized:
+        return "warm"
+    if "kaltmiete" in normalized or "cold rent" in normalized:
+        return "cold"
     return None
 
 

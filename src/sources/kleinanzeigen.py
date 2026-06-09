@@ -53,6 +53,8 @@ def _listing_from_article(article: Selector, base_url: str) -> Listing | None:
         url=url,
         address=address,
         price_eur=_number_from_regex(_PRICE_VALUE_RE, _css_all_text(article, ".aditem-main--middle--price-shipping--price") or ""),
+        price_label=None,
+        utilities_eur=None,
         living_area_m2=_number_from_regex(_SIZE_RE, tags),
         rooms=_number_from_regex(_ROOMS_RE, tags),
         provider=_css_text(article, ".simpletag::text"),

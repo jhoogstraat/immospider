@@ -233,6 +233,8 @@ def _listing(listing_id: str, title: str) -> Listing:
         url=f"https://www.example.test/expose/{listing_id}",
         address="Rheinallee 1, Düsseldorf",
         price_eur=1000.0,
+        price_label=None,
+        utilities_eur=None,
         living_area_m2=70.0,
         rooms=2.0,
         provider=None,
