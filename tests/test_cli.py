@@ -28,7 +28,7 @@ def test_cli_builds_named_criteria_with_separate_notification_urls(monkeypatch, 
         def __init__(self, urls, **kwargs):
             created_monitors.append({"urls": tuple(urls), **kwargs})
 
-        def run_forever(self, *, interval_seconds, sleep):
+        def run_forever(self, *, interval_seconds):
             return None
 
     monkeypatch.setattr(cli, "AppriseNotifier", FakeNotifier)

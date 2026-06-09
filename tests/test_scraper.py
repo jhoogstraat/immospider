@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import anyio
 
 import scraper
 from pages import fetch_options_for_url
@@ -414,6 +415,73 @@ def test_scrapes_criteria_groups_with_one_concurrent_fetch(monkeypatch) -> None:
         ["Düsseldorf Scout", "Düsseldorf Welt"],
         ["Cologne Scout"],
     ]
+
+def test_monitoring_spider_completes_warm_scan_and_failed_requests() -> None:
+    scout_url = "https://www.immobilienscout24.de/duesseldorf"
+    welt_url = "https://www.immowelt.de/duesseldorf"
+    warm_batches: list[list[list[object]]] = []
+    scan_batches: list[list[list[object]]] = []
+    messages: list[str] = []
+    spider = scraper.MonitoringSpider(
+        ((scout_url, welt_url),),
+        limit=10,
+        interval_seconds=0,
+        headless=True,
+        real_chrome=False,
+        concurrent_requests=2,
+        concurrent_requests_per_domain=1,
+        on_warm=warm_batches.append,
+        on_scan=scan_batches.append,
+        max_cycles=2,
+        activity_log=messages.append,
+    )
+
+    async def run() -> None:
+        first_cycle_requests = [request async for request in spider.start_requests()]
+        assert [request.meta["url_index"] for request in first_cycle_requests] == [0, 1]
+
+        assert await _collect_parse(
+            spider,
+            first_cycle_requests[0].meta,
+            """
+            <script type="application/json">
+            {"resultListModel":{"realEstates":[{"id":"1", "url":"/expose/1", "title":"Scout Warm"}]}}
+            </script>
+            """,
+        ) == []
+        next_requests = await _collect_parse(
+            spider,
+            first_cycle_requests[1].meta,
+            """
+            <script type="application/json">
+            {"classifieds":[{"classifiedId":"2", "url":"/expose/2", "headline":"Welt Warm"}]}
+            </script>
+            """,
+        )
+        assert len(next_requests) == 2
+        assert [[listing.title for listing in group] for group in warm_batches[0]] == [["Scout Warm", "Welt Warm"]]
+
+        assert await _collect_parse(
+            spider,
+            next_requests[0].meta,
+            """
+            <script type="application/json">
+            {"resultListModel":{"realEstates":[{"id":"3", "url":"/expose/3", "title":"Scout Scan"}]}}
+            </script>
+            """,
+        ) == []
+        await spider.on_error(next_requests[1], RuntimeError("boom"))
+
+    anyio.run(run)
+
+    assert [[listing.title for listing in group] for group in scan_batches[0]] == [["Scout Scan"]]
+    assert messages == [f"scan request failed: {welt_url}: boom"]
+
+
+async def _collect_parse(spider, meta, html: str):
+    response = SimpleNamespace(meta=meta, body=html.encode(), encoding="utf-8")
+    return [request async for request in spider.parse(response)]
+
 
 
 

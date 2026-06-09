@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import argparse
-import signal
 from datetime import datetime
 import sys
-import threading
 from pathlib import Path
+from typing import cast
 
 from cache import DEFAULT_CACHE_PATH, SeenListingCache
 from monitor import ListingMonitor, SearchCriteria
@@ -19,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="listing-scraper",
         description="Scrape latest property listings from configured search URLs with Scrapling.",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--criteria",
         action="append",
         dest="criteria",
@@ -29,21 +28,21 @@ def main(argv: list[str] | None = None) -> int:
             "in one notification channel."
         ),
     )
-    parser.add_argument("--limit", type=_positive_int, default=20, help="Maximum listings to fetch per scan.")
-    parser.add_argument("--headful", action="store_true", help="Run browser visibly for manual anti-bot challenges.")
-    parser.add_argument("--real-chrome", action="store_true", help="Use installed Google Chrome instead of bundled Chromium.")
-    parser.add_argument("--notify-url", action="append", dest="notify_urls", help="Apprise notification URL. Repeat for multiple endpoints.")
-    parser.add_argument(
+    _ = parser.add_argument("--limit", type=_positive_int, default=20, help="Maximum listings to fetch per scan.")
+    _ = parser.add_argument("--headful", action="store_true", help="Run browser visibly for manual anti-bot challenges.")
+    _ = parser.add_argument("--real-chrome", action="store_true", help="Use installed Google Chrome instead of bundled Chromium.")
+    _ = parser.add_argument("--notify-url", action="append", dest="notify_urls", help="Apprise notification URL. Repeat for multiple endpoints.")
+    _ = parser.add_argument(
         "--criteria-notify-url",
         action="append",
         dest="criteria_notify_urls",
         metavar="NAME=APPRISE_URL",
         help="Apprise notification URL for a named --criteria channel. Repeat for multiple endpoints.",
     )
-    parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE_PATH, help="SQLite cache path for seen listings.")
-    parser.add_argument("--interval", type=_positive_float, default=60.0, help="Seconds between monitor scans.")
-    parser.add_argument("--concurrency", type=_positive_int, default=DEFAULT_CONCURRENT_REQUESTS, help="Maximum listing pages fetched at the same time.")
-    parser.add_argument(
+    _ = parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE_PATH, help="SQLite cache path for seen listings.")
+    _ = parser.add_argument("--interval", type=_positive_float, default=60.0, help="Seconds between monitor scans.")
+    _ = parser.add_argument("--concurrency", type=_positive_int, default=DEFAULT_CONCURRENT_REQUESTS, help="Maximum listing pages fetched at the same time.")
+    _ = parser.add_argument(
         "--per-domain-concurrency",
         type=_non_negative_int,
         default=DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
@@ -51,14 +50,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    criteria_urls = _group_keyed_values(args.criteria or [], "--criteria", parser)
-    if args.criteria_notify_urls and not criteria_urls:
+    parsed_criteria = cast(list[str] | None, args.criteria)
+    parsed_criteria_notify_urls = cast(list[str] | None, args.criteria_notify_urls)
+    parsed_notify_urls = cast(list[str] | None, args.notify_urls)
+    cache_path = cast(Path, args.cache)
+    limit = cast(int, args.limit)
+    headful = cast(bool, args.headful)
+    real_chrome = cast(bool, args.real_chrome)
+    concurrency = cast(int, args.concurrency)
+    per_domain_concurrency = cast(int, args.per_domain_concurrency)
+    interval = cast(float, args.interval)
+
+    criteria_urls = _group_keyed_values(parsed_criteria or [], "--criteria", parser)
+    if parsed_criteria_notify_urls and not criteria_urls:
         parser.error("--criteria-notify-url requires --criteria")
     if not criteria_urls:
         parser.error("at least one --criteria NAME=URL is required")
     urls = tuple(url for criterion_urls in criteria_urls.values() for url in criterion_urls)
-    criteria_notify_urls = _group_keyed_values(args.criteria_notify_urls or [], "--criteria-notify-url", parser)
-    fallback_notify_urls = tuple(args.notify_urls or ())
+    criteria_notify_urls = _group_keyed_values(parsed_criteria_notify_urls or [], "--criteria-notify-url", parser)
+    fallback_notify_urls = tuple(parsed_notify_urls or ())
     missing = [name for name in criteria_urls if name not in criteria_notify_urls and not fallback_notify_urls]
     if missing:
         parser.error(
@@ -74,38 +84,20 @@ def main(argv: list[str] | None = None) -> int:
         for name in criteria_urls
     )
     notifier = criteria[0].notifier
-    with SeenListingCache(args.cache) as cache:
+    with SeenListingCache(cache_path) as cache:
         monitor = ListingMonitor(
             urls,
             cache=cache,
             notifier=notifier,
             criteria=criteria,
-            limit=args.limit,
-            headless=not args.headful,
-            real_chrome=args.real_chrome,
-            concurrent_requests=args.concurrency,
-            concurrent_requests_per_domain=args.per_domain_concurrency,
+            limit=limit,
+            headless=not headful,
+            real_chrome=real_chrome,
+            concurrent_requests=concurrency,
+            concurrent_requests_per_domain=per_domain_concurrency,
             activity_log=_activity_log,
         )
-        stop_requested = threading.Event()
-        original_sigint = signal.getsignal(signal.SIGINT)
-        original_sigterm = signal.getsignal(signal.SIGTERM)
-
-        def request_stop(signum: int, frame: object) -> None:
-            if not stop_requested.is_set():
-                _activity_log("stop requested; finishing current scan")
-                stop_requested.set()
-
-        signal.signal(signal.SIGINT, request_stop)
-        signal.signal(signal.SIGTERM, request_stop)
-        try:
-            monitor.run_forever(interval_seconds=args.interval, sleep=stop_requested.wait)
-        finally:
-            signal.signal(signal.SIGINT, original_sigint)
-            signal.signal(signal.SIGTERM, original_sigterm)
-        if stop_requested.is_set():
-            _activity_log("monitor stopped")
-            return 130
+        monitor.run_forever(interval_seconds=interval)
     return 0
 
 
