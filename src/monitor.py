@@ -107,6 +107,7 @@ class ListingMonitor:
                 self.real_chrome,
                 self.concurrent_requests,
                 self.concurrent_requests_per_domain,
+                activity_log=self.activity_log,
             )
         except Exception as exc:
             self._log(f"{operation} failed: {exc}")

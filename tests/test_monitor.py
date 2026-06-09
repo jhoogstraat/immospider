@@ -38,7 +38,7 @@ def test_first_monitor_fetch_warms_cache_without_notifications(tmp_path: Path, m
     batches = [[first], [first, second]]
     notifier = RecordingNotifier()
 
-    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
+    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain, activity_log=None):
         return [batches.pop(0)]
 
     monkeypatch.setattr("monitor.scrape_listing_page_groups", fake_scrape)
@@ -90,7 +90,7 @@ def test_monitor_run_forever_warms_before_first_scan(tmp_path: Path, monkeypatch
     notifier = RecordingNotifier()
     batches = [[[warm_listing]], [[warm_listing, new_listing]]]
 
-    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
+    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain, activity_log=None):
         assert tuple(url_groups) == (("https://www.immowelt.de/classified-search?order=DateDesc",),)
         return batches.pop(0)
 
@@ -114,7 +114,7 @@ def test_monitor_run_forever_scans_until_max_scans(tmp_path: Path, monkeypatch) 
     notifier = RecordingNotifier()
     batches = [[[listings[0]]], [[listings[0], listings[1]]], [[listings[0], listings[2]]]]
 
-    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
+    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain, activity_log=None):
         return batches.pop(0)
 
     monkeypatch.setattr("monitor.scrape_listing_page_groups", fake_scrape)
@@ -139,7 +139,7 @@ def test_monitor_run_forever_continues_after_scrape_error(tmp_path: Path, monkey
     calls = 0
     messages: list[str] = []
 
-    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
+    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain, activity_log=None):
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -209,7 +209,7 @@ def test_default_monitor_fetches_all_criteria_in_one_group_scrape(tmp_path: Path
     cologne_listing = _listing("2", "Cologne")
     grouped_calls = []
 
-    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
+    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain, activity_log=None):
         grouped_calls.append(tuple(url_groups))
         return [[duesseldorf_listing], [cologne_listing]]
 
@@ -242,7 +242,7 @@ def test_monitor_activity_log_reports_warm_and_scan(tmp_path: Path, monkeypatch)
     batches = [[first], [first, second]]
     messages: list[str] = []
 
-    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
+    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain, activity_log=None):
         return [batches.pop(0)]
 
     monkeypatch.setattr("monitor.scrape_listing_page_groups", fake_scrape)

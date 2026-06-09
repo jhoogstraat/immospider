@@ -18,6 +18,8 @@ DEFAULT_CONCURRENT_REQUESTS = 4
 DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN = 1
 BROWSER_SETTLE_MS = 500
 BROWSER_TIMEOUT_MS = 45000
+ActivityLog = Callable[[str], None]
+
 
 
 
@@ -39,6 +41,7 @@ def scrape_listing_page_groups(
     real_chrome: bool = False,
     concurrent_requests: int = DEFAULT_CONCURRENT_REQUESTS,
     concurrent_requests_per_domain: int = DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN,
+    activity_log: ActivityLog | None = None,
 ) -> list[list[Listing]]:
     """Fetch and extract all criteria URLs in one Scrapling spider crawl, then split listings by criteria."""
     flat_urls = [url for urls in url_groups for url in urls]
@@ -49,6 +52,7 @@ def scrape_listing_page_groups(
         real_chrome=real_chrome,
         concurrent_requests=concurrent_requests,
         concurrent_requests_per_domain=concurrent_requests_per_domain,
+        activity_log=activity_log,
     )
     groups: list[list[Listing]] = []
     position = 0
@@ -71,6 +75,7 @@ def _fetch_listings_concurrently(
     real_chrome: bool,
     concurrent_requests: int,
     concurrent_requests_per_domain: int,
+    activity_log: ActivityLog | None = None,
 ) -> list[_FetchedListings]:
     if not urls:
         return []
@@ -81,6 +86,7 @@ def _fetch_listings_concurrently(
         real_chrome=real_chrome,
         concurrent_requests=concurrent_requests,
         concurrent_requests_per_domain=concurrent_requests_per_domain,
+        activity_log=activity_log,
     )
     result = spider.start()
     spider_items = cast(list[_SpiderItem], result.items)
@@ -272,6 +278,7 @@ class _ListingPagesSpider(Spider):
         real_chrome: bool,
         concurrent_requests: int,
         concurrent_requests_per_domain: int,
+        activity_log: ActivityLog | None,
     ) -> None:
         self.urls: tuple[str, ...] = urls
         self.limit: int = limit
@@ -279,6 +286,7 @@ class _ListingPagesSpider(Spider):
         self.real_chrome: bool = real_chrome
         self.concurrent_requests: int = concurrent_requests
         self.concurrent_requests_per_domain: int = concurrent_requests_per_domain
+        self.activity_log: ActivityLog | None = activity_log
         super().__init__()
 
     @override
@@ -323,6 +331,13 @@ class _ListingPagesSpider(Spider):
             "position": position,
             "listings": source_for_url(requested_url).extract(html, requested_url)[: self.limit],
         }
+
+    @override
+    async def on_error(self, request: Request, error: Exception) -> None:
+        if self.activity_log is not None:
+            position = cast(int | None, request.meta.get("position"))
+            prefix = f"page {position + 1}/{len(self.urls)} " if position is not None else ""
+            self.activity_log(f"scrape request failed: {prefix}{request.url}: {error}")
 
 
 

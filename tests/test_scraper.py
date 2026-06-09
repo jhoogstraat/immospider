@@ -331,6 +331,7 @@ def test_scrapes_multiple_configured_pages(monkeypatch) -> None:
         real_chrome: bool,
         concurrent_requests: int,
         concurrent_requests_per_domain: int,
+        activity_log=None,
     ):
         assert tuple(urls) == tuple(pages)
         assert limit == 10
@@ -384,6 +385,7 @@ def test_scrapes_criteria_groups_with_one_concurrent_fetch(monkeypatch) -> None:
         real_chrome: bool,
         concurrent_requests: int,
         concurrent_requests_per_domain: int,
+        activity_log=None,
     ):
         requested_batches.append(tuple(urls))
         return [
@@ -499,6 +501,7 @@ def test_fetch_listings_preserves_configured_page_order(monkeypatch) -> None:
             real_chrome: bool,
             concurrent_requests: int,
             concurrent_requests_per_domain: int,
+            activity_log=None,
         ) -> None:
             assert urls == ("https://a.test", "https://b.test")
             assert limit == 10
@@ -541,6 +544,7 @@ def test_fetch_listings_fills_failed_pages_with_empty_results(monkeypatch) -> No
             real_chrome: bool,
             concurrent_requests: int,
             concurrent_requests_per_domain: int,
+            activity_log=None,
         ) -> None:
             pass
 
@@ -559,6 +563,24 @@ def test_fetch_listings_fills_failed_pages_with_empty_results(monkeypatch) -> No
     )
 
     assert [page.listings for page in pages] == [[], [SimpleNamespace(id="b")]]
+
+
+def test_listing_pages_spider_logs_request_errors() -> None:
+    messages: list[str] = []
+    spider = scraper._ListingPagesSpider(
+        ("https://a.test", "https://b.test"),
+        limit=10,
+        headless=True,
+        real_chrome=False,
+        concurrent_requests=2,
+        concurrent_requests_per_domain=1,
+        activity_log=messages.append,
+    )
+    request = SimpleNamespace(url="https://b.test", meta={"position": 1})
+
+    anyio.run(spider.on_error, request, RuntimeError("browser timed out"))
+
+    assert messages == ["scrape request failed: page 2/2 https://b.test: browser timed out"]
 
 
 
