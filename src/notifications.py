@@ -34,13 +34,12 @@ class AppriseNotifier:
 
 
 def _notification_title(listing: Listing) -> str:
-    title = listing.title or "New listing"
-    return f"{listing.source}: {title}"
+    return listing.source
 
 
 def _notification_body(listing: Listing) -> str:
     title = _markdown_link(listing.title or "New listing", listing.url)
-    lines = [f"### {title}"]
+    lines = [f"**{title}**"]
 
     price = _format_price(listing.price_eur, listing.price_label)
     if price is not None:

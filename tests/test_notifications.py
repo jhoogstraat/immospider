@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from apprise.plugins.discord import NotifyDiscord
 from models import Listing
 from notifications import _notification_body
 
@@ -25,7 +26,7 @@ def test_notification_body_formats_listing_links_price_and_timestamp() -> None:
 
     body = _notification_body(listing)
 
-    assert "### [Bright \\[Altbau\\]](https://www.example.test/expose/123)" in body
+    assert "**[Bright \\[Altbau\\]](https://www.example.test/expose/123)**" in body
     assert "**Price:** 1.250 € warm" in body
     assert "**Utilities / Nebenkosten:** 180 €" in body
     assert "**Address:** [Rheinallee 1, Düsseldorf](https://www.google.com/maps/search/?api=1&query=Rheinallee+1%2C+D%C3%BCsseldorf)" in body
@@ -33,6 +34,11 @@ def test_notification_body_formats_listing_links_price_and_timestamp() -> None:
     assert listing.google_maps_url not in body.splitlines()
     assert "**Published:** 14:05 09.06.2026" in body
     assert "https://www.example.test/expose/123" not in body.splitlines()[1:]
+    assert not body.startswith("#")
+    description, fields = NotifyDiscord.extract_markdown_sections(body)
+    assert description == body
+    assert fields == []
+
 
 
 def test_notification_body_keeps_unparsed_published_text() -> None:
@@ -56,6 +62,6 @@ def test_notification_body_keeps_unparsed_published_text() -> None:
 
     body = _notification_body(listing)
 
-    assert "### [New listing](https://www.example.test/expose/123)" in body
+    assert "**[New listing](https://www.example.test/expose/123)**" in body
     assert "**Price:** 980 € cold" in body
     assert "**Published:** Heute, 10:30" in body

@@ -148,7 +148,12 @@ class ListingMonitor:
                 if not self.cache.add_if_new(listing, namespace):
                     continue
                 new_count += 1
-                if criterion.notifier.notify(listing):
+                try:
+                    sent = criterion.notifier.notify(listing)
+                except Exception as exc:
+                    self._log(f"notification failed for {listing.url}: {exc}")
+                    continue
+                if sent:
                     notified += 1
         result = ScanResult(seen=seen, new=new_count, notified=notified)
         self._log(f"scan complete: seen={result.seen} new={result.new} notified={result.notified}")

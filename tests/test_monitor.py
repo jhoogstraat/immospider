@@ -27,6 +27,11 @@ class CriteriaRecordingNotifier:
         return True
 
 
+class FailingNotifier:
+    def notify(self, listing: Listing) -> bool:
+        raise RuntimeError("discord rejected payload")
+
+
 def test_first_monitor_fetch_warms_cache_without_notifications(tmp_path: Path, monkeypatch) -> None:
     first = _listing("1", "Warm")
     second = _listing("2", "New")
@@ -55,6 +60,28 @@ def test_first_monitor_fetch_warms_cache_without_notifications(tmp_path: Path, m
     assert scan.new == 1
     assert scan.notified == 1
     assert notifier.sent == [second]
+
+def test_monitor_logs_notification_errors_without_crashing(tmp_path: Path) -> None:
+    messages: list[str] = []
+    listing = _listing("1", "New")
+
+    with SeenListingCache(tmp_path / "seen.sqlite3") as cache:
+        monitor = ListingMonitor(
+            ["https://www.immobilienscout24.de/search"],
+            cache=cache,
+            notifier=FailingNotifier(),
+            activity_log=messages.append,
+        )
+
+        scan = monitor._scan_with_listings([[listing]])
+
+    assert scan.seen == 1
+    assert scan.new == 1
+    assert scan.notified == 0
+    assert messages == [
+        "notification failed for https://www.example.test/expose/1: discord rejected payload",
+        "scan complete: seen=1 new=1 notified=0",
+    ]
 
 
 def test_monitor_run_forever_warms_before_first_scan(tmp_path: Path, monkeypatch) -> None:
