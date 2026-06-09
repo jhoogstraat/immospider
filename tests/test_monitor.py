@@ -88,24 +88,14 @@ def test_monitor_run_forever_warms_before_first_scan(tmp_path: Path, monkeypatch
     warm_listing = _listing("1", "Warm")
     new_listing = _listing("2", "New")
     notifier = RecordingNotifier()
+    batches = [[[warm_listing]], [[warm_listing, new_listing]]]
 
-    class FakeMonitoringSpider:
-        def __init__(self, url_groups, **kwargs) -> None:
-            assert tuple(url_groups) == (("https://www.immowelt.de/classified-search?order=DateDesc",),)
-            assert kwargs["interval_seconds"] == 1
-            assert kwargs["max_cycles"] == 2
-            self.on_warm = kwargs["on_warm"]
-            self.on_scan = kwargs["on_scan"]
+    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
+        assert tuple(url_groups) == (("https://www.immowelt.de/classified-search?order=DateDesc",),)
+        return batches.pop(0)
 
-        def pause(self) -> None:
-            return None
-
-        def start(self):
-            self.on_warm([[warm_listing]])
-            self.on_scan([[warm_listing, new_listing]])
-            return None
-
-    monkeypatch.setattr("monitor.MonitoringSpider", FakeMonitoringSpider)
+    monkeypatch.setattr("monitor.scrape_listing_page_groups", fake_scrape)
+    monkeypatch.setattr("monitor.sleep", lambda seconds: None)
 
     with SeenListingCache(tmp_path / "seen.sqlite3") as cache:
         monitor = ListingMonitor(
@@ -119,29 +109,16 @@ def test_monitor_run_forever_warms_before_first_scan(tmp_path: Path, monkeypatch
     assert notifier.sent == [new_listing]
 
 
-def test_monitor_run_forever_uses_one_spider_for_multiple_scans(tmp_path: Path, monkeypatch) -> None:
+def test_monitor_run_forever_scans_until_max_scans(tmp_path: Path, monkeypatch) -> None:
     listings = [_listing("1", "Warm"), _listing("2", "First"), _listing("3", "Second")]
     notifier = RecordingNotifier()
-    constructed = 0
+    batches = [[[listings[0]]], [[listings[0], listings[1]]], [[listings[0], listings[2]]]]
 
-    class FakeMonitoringSpider:
-        def __init__(self, url_groups, **kwargs) -> None:
-            nonlocal constructed
-            constructed += 1
-            assert kwargs["max_cycles"] == 3
-            self.on_warm = kwargs["on_warm"]
-            self.on_scan = kwargs["on_scan"]
+    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
+        return batches.pop(0)
 
-        def pause(self) -> None:
-            return None
-
-        def start(self):
-            self.on_warm([[listings[0]]])
-            self.on_scan([[listings[0], listings[1]]])
-            self.on_scan([[listings[0], listings[2]]])
-            return None
-
-    monkeypatch.setattr("monitor.MonitoringSpider", FakeMonitoringSpider)
+    monkeypatch.setattr("monitor.scrape_listing_page_groups", fake_scrape)
+    monkeypatch.setattr("monitor.sleep", lambda seconds: None)
 
     with SeenListingCache(tmp_path / "seen.sqlite3") as cache:
         monitor = ListingMonitor(
@@ -152,8 +129,44 @@ def test_monitor_run_forever_uses_one_spider_for_multiple_scans(tmp_path: Path, 
 
         monitor.run_forever(interval_seconds=1, max_scans=2)
 
-    assert constructed == 1
+    assert batches == []
     assert notifier.sent == listings[1:]
+
+
+def test_monitor_run_forever_continues_after_scrape_error(tmp_path: Path, monkeypatch) -> None:
+    listing = _listing("1", "Recovered")
+    notifier = RecordingNotifier()
+    calls = 0
+    messages: list[str] = []
+
+    def fake_scrape(url_groups, limit, headless, real_chrome, concurrent_requests, concurrent_requests_per_domain):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("browser timed out")
+        return [[listing]]
+
+    monkeypatch.setattr("monitor.scrape_listing_page_groups", fake_scrape)
+    monkeypatch.setattr("monitor.sleep", lambda seconds: None)
+
+    with SeenListingCache(tmp_path / "seen.sqlite3") as cache:
+        monitor = ListingMonitor(
+            ["https://www.immowelt.de/classified-search?order=DateDesc"],
+            cache=cache,
+            notifier=notifier,
+            activity_log=messages.append,
+        )
+
+        monitor.run_forever(interval_seconds=1, max_scans=1)
+
+    assert notifier.sent == [listing]
+    assert messages == [
+        "warming cache: fetching 1 page(s)",
+        "cache warm failed: browser timed out",
+        "cache warm: seen=0 cached_new=0 notified=0",
+        "scan starting: fetching 1 page(s)",
+        "scan complete: seen=1 new=1 notified=1",
+    ]
 
 def test_named_criteria_notify_separate_channels_and_cache_namespaces(tmp_path: Path) -> None:
     warm_listing = _listing("0", "Warm")

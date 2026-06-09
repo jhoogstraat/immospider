@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import signal
+from time import sleep
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from cache import SeenListingCache
 from models import Listing
 from notifications import Notifier
-from scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN, MonitoringSpider, scrape_listing_page_groups
+from scraper import DEFAULT_CONCURRENT_REQUESTS, DEFAULT_CONCURRENT_REQUESTS_PER_DOMAIN, scrape_listing_page_groups
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,30 +63,12 @@ class ListingMonitor:
 
     def warm_cache(self) -> ScanResult:
         self._log(f"warming cache: fetching {len(self.urls)} page(s)")
-        result = self._warm_with_listings(
-            scrape_listing_page_groups(
-                [criterion.urls for criterion in self.criteria],
-                self.limit,
-                self.headless,
-                self.real_chrome,
-                self.concurrent_requests,
-                self.concurrent_requests_per_domain,
-            )
-        )
+        result = self._warm_with_listings(self._fetch_grouped_listings("cache warm"))
         return result
 
     def scan_once(self) -> ScanResult:
         self._log(f"scan starting: fetching {len(self.urls)} page(s)")
-        result = self._scan_with_listings(
-            scrape_listing_page_groups(
-                [criterion.urls for criterion in self.criteria],
-                self.limit,
-                self.headless,
-                self.real_chrome,
-                self.concurrent_requests,
-                self.concurrent_requests_per_domain,
-            )
-        )
+        result = self._scan_with_listings(self._fetch_grouped_listings("scan"))
         return result
 
     def run_forever(
@@ -94,38 +77,42 @@ class ListingMonitor:
         interval_seconds: float,
         max_scans: int | None = None,
     ) -> None:
-        max_cycles = None if max_scans is None else max_scans + 1
-        spider = MonitoringSpider(
-            [criterion.urls for criterion in self.criteria],
-            limit=self.limit,
-            interval_seconds=interval_seconds,
-            headless=self.headless,
-            real_chrome=self.real_chrome,
-            concurrent_requests=self.concurrent_requests,
-            concurrent_requests_per_domain=self.concurrent_requests_per_domain,
-            on_warm=self._on_warm_listings,
-            on_scan=self._on_scan_listings,
-            max_cycles=max_cycles,
-            activity_log=self.activity_log,
-        )
-        stop_before_start = False
+        scans_completed = 0
+        stop_requested = False
         original_sigterm = signal.getsignal(signal.SIGTERM)
 
         def request_stop(_signum: int, _frame: object) -> None:
-            nonlocal stop_before_start
+            nonlocal stop_requested
+            stop_requested = True
             self._log("stop requested; finishing current scan")
-            try:
-                spider.pause()
-            except RuntimeError:
-                stop_before_start = True
 
         _ = signal.signal(signal.SIGTERM, request_stop)
         try:
-            if stop_before_start:
-                return
-            _ = spider.start()
+            self.warm_cache()
+            while not stop_requested and (max_scans is None or scans_completed < max_scans):
+                sleep(interval_seconds)
+                if stop_requested:
+                    break
+                self.scan_once()
+                scans_completed += 1
         finally:
             _ = signal.signal(signal.SIGTERM, original_sigterm)
+
+    def _fetch_grouped_listings(self, operation: str) -> list[list[Listing]]:
+        try:
+            return scrape_listing_page_groups(
+                [criterion.urls for criterion in self.criteria],
+                self.limit,
+                self.headless,
+                self.real_chrome,
+                self.concurrent_requests,
+                self.concurrent_requests_per_domain,
+            )
+        except Exception as exc:
+            self._log(f"{operation} failed: {exc}")
+            return [[] for _ in self.criteria]
+
+
 
     def _warm_with_listings(self, grouped_listings: Sequence[Sequence[Listing]]) -> ScanResult:
         seen = 0

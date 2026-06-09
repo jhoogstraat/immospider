@@ -84,15 +84,17 @@ def _fetch_listings_concurrently(
     )
     result = spider.start()
     spider_items = cast(list[_SpiderItem], result.items)
-    fetched_pages = [
-        _FetchedListings(
+    fetched_by_position = {
+        item["position"]: _FetchedListings(
             position=item["position"],
             listings=item["listings"],
         )
         for item in spider_items
+    }
+    return [
+        fetched_by_position.get(position, _FetchedListings(position=position, listings=[]))
+        for position in range(len(urls))
     ]
-    fetched_pages.sort(key=lambda page: page.position)
-    return fetched_pages
 
 
 class MonitoringSpider(Spider):

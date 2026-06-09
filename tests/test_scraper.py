@@ -530,6 +530,37 @@ def test_fetch_listings_preserves_configured_page_order(monkeypatch) -> None:
     assert [page.listings[0].id for page in pages] == ["a", "b"]
     assert len(created) == 1
 
+def test_fetch_listings_fills_failed_pages_with_empty_results(monkeypatch) -> None:
+    class FakeSpider:
+        def __init__(
+            self,
+            urls,
+            limit: int,
+            *,
+            headless: bool,
+            real_chrome: bool,
+            concurrent_requests: int,
+            concurrent_requests_per_domain: int,
+        ) -> None:
+            pass
+
+        def start(self):
+            return SimpleNamespace(items=[{"position": 1, "listings": [SimpleNamespace(id="b")]}])
+
+    monkeypatch.setattr(scraper, "_ListingPagesSpider", FakeSpider)
+
+    pages = scraper._fetch_listings_concurrently(
+        ("https://a.test", "https://b.test"),
+        limit=10,
+        headless=False,
+        real_chrome=True,
+        concurrent_requests=6,
+        concurrent_requests_per_domain=3,
+    )
+
+    assert [page.listings for page in pages] == [[], [SimpleNamespace(id="b")]]
+
+
 
 
 def test_source_registry_supports_kleinanzeigen_urls() -> None:
