@@ -203,6 +203,25 @@ def test_extracts_immowelt_listing_from_embedded_json() -> None:
     assert listing.google_maps_url == "https://www.google.com/maps/search/?api=1&query=40213%2C+D%C3%BCsseldorf"
 
 
+def test_immowelt_prefers_listing_headline_over_generic_title() -> None:
+    html = """
+    <script id="__NEXT_DATA__" type="application/json">
+    {"props":{"pageProps":{"classifiedSearch":{"classifieds":[{
+      "classifiedId":"generic-title",
+      "url":"/expose/generic-title",
+      "title":"New listing",
+      "name":"von privat",
+      "headline":"Sanierte Altbauwohnung mit Balkon"
+    }]}}}}
+    </script>
+    """
+
+    listings = immowelt.extract_listings(html)
+
+    assert len(listings) == 1
+    assert listings[0].title == "Sanierte Altbauwohnung mit Balkon"
+
+
 def test_extracts_immowelt_visible_card_with_scrapling_selectors() -> None:
     html = """
     <section data-test="estate-card">

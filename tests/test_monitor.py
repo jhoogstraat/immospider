@@ -61,6 +61,25 @@ def test_first_monitor_fetch_warms_cache_without_notifications(tmp_path: Path, m
     assert scan.notified == 1
     assert notifier.sent == [second]
 
+
+def test_monitor_sends_one_notification_per_new_listing(tmp_path: Path) -> None:
+    listings = [_listing("1", "First"), _listing("2", "Second")]
+    notifier = RecordingNotifier()
+
+    with SeenListingCache(tmp_path / "seen.sqlite3") as cache:
+        monitor = ListingMonitor(
+            ["https://www.immobilienscout24.de/search"],
+            cache=cache,
+            notifier=notifier,
+        )
+
+        scan = monitor._scan_with_listings([listings])
+
+    assert scan.seen == 2
+    assert scan.new == 2
+    assert scan.notified == 2
+    assert notifier.sent == listings
+
 def test_monitor_logs_notification_errors_without_crashing(tmp_path: Path) -> None:
     messages: list[str] = []
     listing = _listing("1", "New")

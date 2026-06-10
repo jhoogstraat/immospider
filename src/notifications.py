@@ -29,16 +29,17 @@ class AppriseNotifier:
                 title=_notification_title(listing),
                 body=_notification_body(listing),
                 body_format="markdown",
+                attach=[listing.image_url] if listing.image_url else None,
             )
         )
 
 
 def _notification_title(listing: Listing) -> str:
-    return listing.source
+    return ""
 
 
 def _notification_body(listing: Listing) -> str:
-    title = _markdown_link(listing.title or "New listing", listing.url)
+    title = _markdown_link(listing.title or listing.url, listing.url)
     lines = [f"**{title}**"]
 
     price = _format_price(listing.price_eur, listing.price_label)
@@ -58,7 +59,7 @@ def _notification_body(listing: Listing) -> str:
     ]
     lines.extend(f"**{name}:** {value}" for name, value in details if value)
     if listing.image_url:
-        lines.append(f"**Image:** {_markdown_link('Open image', listing.image_url)}")
+        lines.append("**Image:** image")
     return "\n".join(lines)
 
 
@@ -95,7 +96,7 @@ def _format_published(value: str | None) -> str | None:
     parsed = _parse_datetime(normalized)
     if parsed is None:
         return normalized
-    return parsed.astimezone().strftime("%H:%M %d.%m.%Y")
+    return parsed.astimezone().strftime("%d.%m.%Y %H:%M")
 
 
 def _parse_datetime(value: str) -> datetime | None:
