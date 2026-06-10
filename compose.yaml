@@ -9,7 +9,7 @@ services:
       - --criteria
       - duesseldorf=https://www.immobilienscout24.de/Suche/de/nordrhein-westfalen/duesseldorf/wohnung-mieten
       - --criteria
-      - duesseldorf=https://www.immowelt.de/liste/duesseldorf/wohnungen/mieten?sort=relevanz
+      - duesseldorf=https://www.immowelt.de/classified-search?distributionTypes=Rent&estateTypes=Apartment&locations=AD08DE2112&order=DateDesc
       - --criteria
       - duesseldorf=https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf/sortierung:neuste/anzeige:angebote/c203l2068
       - --notify-url

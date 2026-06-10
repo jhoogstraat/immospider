@@ -193,7 +193,7 @@ def _extract_from_cards(page: Selector, base_url: str, config: ExtractionConfig)
         out.append(
             Listing(
                 id=_id_from_url(url, config),
-                title=_heading_text(card) or _heading_text(link) or _selector_text(link),
+                title=_heading_text(card) or _heading_text(link) or _attr(link, "title") or _selector_text(link),
                 url=url,
                 address=address,
                 price_eur=price_eur,

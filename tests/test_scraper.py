@@ -254,6 +254,26 @@ def test_extracts_immowelt_visible_card_with_scrapling_selectors() -> None:
     assert listing.image_url == "https://www.immowelt.de/images/5f6g7h.jpg"
 
 
+def test_extracts_immowelt_classified_search_card_title_from_empty_link_title() -> None:
+    html = """
+    <article data-test="estate-card">
+      <a href="/expose/81f22442-649a-47ac-a0ef-aa0192c032fa"
+         title="Wohnung zur Miete - Düsseldorf - 936 € - 3 Zimmer, 81,4 m², 5. Geschoss"></a>
+      <strong>936 €</strong>
+      <span>3 Zimmer</span>
+      <span>81,4 m²</span>
+    </article>
+    """
+
+    listings = immowelt.extract_listings(
+        html,
+        "https://www.immowelt.de/classified-search?distributionTypes=Rent&estateTypes=Apartment&locations=AD08DE2112&order=DateDesc",
+    )
+
+    assert len(listings) == 1
+    assert listings[0].title == "Wohnung zur Miete - Düsseldorf - 936 € - 3 Zimmer, 81,4 m², 5. Geschoss"
+
+
 def test_extracts_kleinanzeigen_listing_from_visible_card() -> None:
     html = """
     <li class="ad-listitem fully-clickable-card">
