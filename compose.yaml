@@ -7,7 +7,7 @@ services:
       - immospider-data:/data
     command:
       - --criteria
-      - duesseldorf=https://www.immobilienscout24.de/Suche/de/nordrhein-westfalen/duesseldorf/wohnung-mieten
+      - duesseldorf=https://www.immobilienscout24.de/Suche/de/nordrhein-westfalen/duesseldorf/wohnung-mieten?sorting=2
       - --criteria
       - duesseldorf=https://www.immowelt.de/classified-search?distributionTypes=Rent&estateTypes=Apartment&locations=AD08DE2112&order=DateDesc
       - --criteria
