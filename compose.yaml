@@ -11,7 +11,7 @@ services:
       - --criteria
       - duesseldorf=https://www.immowelt.de/liste/duesseldorf/wohnungen/mieten?sort=relevanz
       - --criteria
-      - duesseldorf=https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf/c203l2068
+      - duesseldorf=https://www.kleinanzeigen.de/s-wohnung-mieten/duesseldorf/sortierung:neuste/anzeige:angebote/c203l2068
       - --notify-url
       - ${DISCORD_APPRISE_URL:?Set DISCORD_APPRISE_URL, e.g. discord://WEBHOOK_ID/WEBHOOK_TOKEN}
       - --interval
